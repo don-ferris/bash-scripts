@@ -13,7 +13,7 @@ ask_question() {
 }
 
 sed -i.bak '/Ext.Msg.show/{N;/\n.*No valid sub/s/Ext.Msg.show/void/;}' /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
-grep -n -B 1 'No valid sub' proxmoxlib.js
+grep -n -B 1 'No valid sub' /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 
 # Ask the question
 if ask_question "Restart PVE proxy service?"; then
