@@ -7,7 +7,7 @@ wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/no-more-n
 
 ***Add all my favorite aliases:***
 
-wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/.aliases && source ./aliases && alias
+wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/.aliases && source ./.aliases && alias
 
 ***Fix nano to work with a mouse and use common key bindings:***
 
