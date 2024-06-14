@@ -18,8 +18,8 @@ alias als='nano ~/.aliases && source ~/.bashrc'
 alias edal='nano ~/.aliases && source ~/.bashrc'
 
 ######   EDIT .bashrc then refresh (source) it                     ###
-alias brc='micro ~/.bashrc && source ~/.bashrc'
-alias edbrc='micro ~/.bashrc && source ~/.bashrc'
+alias brc='nano ~/.bashrc && source ~/.bashrc'
+alias edbrc='nano ~/.bashrc && source ~/.bashrc'
 
 ######   CALC - CLI calculator                                     ###
 alias calc='bc -l'
