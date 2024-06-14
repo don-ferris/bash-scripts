@@ -23,7 +23,7 @@ set atblanks
 set autoindent
 
 ## Back up files to the current filename plus a tilde.
-set backup
+# set backup
 
 ## The directory to put unique backup files in.
 # set backupdir ""
@@ -46,13 +46,13 @@ set backup
 # set casesensitive
 
 ## Constantly display the cursor position in the status bar or minibar.
-set constantshow
+# set constantshow
 
 ## Use cut-from-cursor-to-end-of-line by default.
 # set cutfromcursor
 
 ## Do not use the line below the title bar, leaving it entirely blank.
-set emptyline
+# set emptyline
 
 ## Set the target width for automatic hard-wrapping and for justifying
 ## paragraphs.  If the specified value is 0 or less, the wrapping point
@@ -139,7 +139,7 @@ set mouse
 # set rawsequences
 
 ## Fix Backspace/Delete confusion problem.
-set rebinddelete
+# set rebinddelete
 
 ## Do regular-expression searches by default.
 ## Regular expressions are of the extended type (ERE).
@@ -169,7 +169,7 @@ set softwrap
 
 ## Use the end of the title bar for some state flags: I = auto-indenting,
 ## M = mark, L = hard-wrapping long lines, R = recording, S = soft-wrapping.
-set stateflags
+# set stateflags
 
 ## Use this tab size instead of the default; it must be greater than 0.
 # set tabsize 8
@@ -312,7 +312,7 @@ bind ^S savefile main
 #bind ^H exit help
 bind ^F whereis all
 bind ^G findnext all
-bind ^B wherewas all
+#bind ^B wherewas all
 bind ^D findprevious all
 bind ^R replace main
 #unbind ^U all
@@ -321,13 +321,13 @@ unbind ^Y all
 #unbind M-J main
 #unbind M-T main
 bind ^A mark main
-bind ^P location main
+#bind ^P location main
 bind ^T gotoline main
 #bind ^T gotodir browser
 #bind ^T cutrestoffile execute
 #bind ^L linter execute
 #bind ^E execute main
-bind ^K "{mark}{end}{zap}" main
+#bind ^K "{mark}{end}{zap}" main
 #bind ^U "{mark}{home}{zap}" main
 bind ^Z undo main
 bind ^Y redo main
