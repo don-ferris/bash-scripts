@@ -6,4 +6,4 @@ wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/no-more-n
 
 wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/.aliases && source ./aliases && alias
 
-wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh
+wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash fixnano.sh
