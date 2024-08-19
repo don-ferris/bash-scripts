@@ -107,6 +107,16 @@ alias filetree="find . -print | sed -e 's;[^/]*/;|____;g;s;____|; |;g' > .filetr
 alias fixnano="wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh"
 
 
+#	git pull
+#_________________________________________________________________
+alias gitpull='clear && echo "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" | xclip -selection clipboard && git pull'
+
+
+#	git push
+#_________________________________________________________________
+alias gitpush='clear && echo "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" | xclip -selection clipboard && git commit -m "commit" && git push origin main'
+
+
 #	GO (to a Docker container directory)
 #_________________________________________________________________
 fn_go() {
