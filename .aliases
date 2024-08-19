@@ -226,7 +226,7 @@ alias gitpush='clear && echo "$GITTOKEN" | xclip -selection clipboard && git com
 #	git token
 #_________________________________________________________________
 alias gittoken='echo "$GITTOKEN" | xclip -selection clipboard && echo "Github Personal Access Token has been copied to the clipboard."'
-
+alias gittoken='[[ -z "$GITTOKEN" ]] && echo "GITTOKEN environment variable is not set. Edit ~/.bashrc and add a line near the bottom that says export gittoken=[your Github PAT]" || (echo "$GITTOKEN" | xclip -selection clipboard && echo "GitHub Personal Access Token has been copied to the clipboard.")'
 
 #	GO (to a Docker container directory)
 #_________________________________________________________________
