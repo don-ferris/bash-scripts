@@ -1,63 +1,135 @@
 # Aliases
 # alias alias_name="command_to_run"
 
-######   . (DOT) - ls current directory                            ###
-alias .='ls -lA --group-directories-first --color='always''
 
-######   .. (DOT DOT) - up one directory (& ls)                    ###
+#	. (DOT) - ls current directory
+#_________________________________________________________________
+alias .='ls -lA --group-directories-first'
+
+
+#	.. (DOT DOT) - up one directory (& ls)
+#_________________________________________________________________
 alias ..='cd .. && ls'
 
-######   ... (DOT DOT DOT) - up 2 directories (& ls)               ###
+
+#	... (DOT DOT DOT) - up 2 directories (& ls)
+#_________________________________________________________________
 alias ...='cd ../.. && ls'
 
-######   .... (DOT DOT DOT DOT) - up 3 directories (& ls)          ###
-alias ....='cd ../../.. && ls'
 
-######   EDIT .aliases then refresh (source) it                    ###
-alias als='nano ~/.aliases && source ~/.bashrc'
-alias edal='nano ~/.aliases && source ~/.bashrc'
+#	HOME - shortcut to home directory (this may already be
+#	in place but if so, no harm done
+#_________________________________________________________________
+alias ~='cd ~'
 
-######   EDIT .bashrc then refresh (source) it                     ###
+
+#	List aliases
+#_________________________________________________________________
+alias lsal='alias'
+alias al='alias'
+
+
+#	EDIT .aliases then refresh (source) it
+#_________________________________________________________________
+alias als='nano ~/.aliases && source ~/.aliases'
+alias edal='nano ~/.aliases && source ~/.aliases'
+
+
+#	EDIT .bashrc then refresh (source) it
+#_________________________________________________________________
 alias brc='nano ~/.bashrc && source ~/.bashrc'
-alias edbrc='nano ~/.bashrc && source ~/.bashrc'
 
-######   CALC - CLI calculator                                     ###
+
+#	CALC - CLI calculator
+#_________________________________________________________________
 alias calc='bc -l'
 
-######   CD THEN LS - Change dir then list contents                ###
+
+#	CD THEN LS - Change dir then list contents
+#_________________________________________________________________
 fn_cdls() {
   cd "$1"
   ls
 }
+alias cdd='fn_cdls'
 alias cdls='fn_cdls'
+alias lscd='fn_cdls'
 
-######   Get CPU info                                              ###
+
+#	Get CPU info
+#_________________________________________________________________
 alias cpuinfo='lscpu'
 
-######   INSTALL from .deb file                                    ###
+
+#	docker-compose DOWN
+#_________________________________________________________________
+alias dcdown='docker-compose down'
+
+
+#	docker-compose UP
+#_________________________________________________________________
+alias dcup='docker-compose up -d'
+
+
+#	INSTALL from .deb file
+#_________________________________________________________________
 alias deb='sudo dpkg -i'
 
-######   Download a file (wget) with resume by default             ###
+
+#   Download a file (wget) with resume by default
+#_________________________________________________________________
 alias download='wget -c'
 alias dl='wget -c'
 
-######   EDIT (file using nano editor)                            ###
+
+#	EDIT docker-compose.yml
+#_________________________________________________________________
+alias edcy='[ -e "./docker-compose.yaml" ] && nano docker-compose.yaml || nano docker-compose.yml'
+
+
+#	EDIT (file using nano editor)
+#_________________________________________________________________
 alias edit='nano'
 
-######   output file tree as text (ctrl+F!)                        ###
+
+#	EDIT .bashrc then refresh (source) it
+#_________________________________________________________________
+alias edbrc='nano ~/.bashrc && source ~/.bashrc'
+
+
+#	output file tree as text (ctrl+F!)
+#_________________________________________________________________
 alias filetree="find . -print | sed -e 's;[^/]*/;|____;g;s;____|; |;g' > .filetree && xdg-open .filetree"
 
-######   INST - apt -install                                       ###
-###################################################################
-alias inst='apt install -y'
 
-######   INSTALL - apt -install                                    ###
+#	fix nano key bindings
+#_________________________________________________________________
+alias fixnano="wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh"
+
+
+#	GO (to a Docker container directory)
+#_________________________________________________________________
+fn_go() {
+  if [ -d "~/docker/$1" ]; then
+    cd ~/docker/$1
+  elif [ -d "~/docker/$1" ]; then
+    cd ~/docker/$1
+  else
+    cd ~/docker
+  fi
+  ls
+}
+alias go='fn_go'
+
+
+#	INST - apt -install
+#_________________________________________________________________
+alias inst='apt install -y'
 alias install='apt install -y'
 
-######   CD THEN LS - Change dir then list contents                ###
-alias lscd='fn_cdls'
 
-######   MAKE DIR then CD into it                                  ###
+#	MAKE DIR then CD into it
+#_________________________________________________________________
 fn_md () {
   mkdir "$1"
   cd "$1"
@@ -65,16 +137,34 @@ fn_md () {
 }
 alias md='fn_md'
 
-######   pass options to free                                      ###
+
+#	pass options to free
+#_________________________________________________________________
 alias meminfo='free -m -l -t'
 
-######   IP (PUBLIC) - Print my public IP                          ###
+
+#	IP (PUBLIC) - Print my public IP
+#_________________________________________________________________
 alias myip='curl ipinfo.io/ip'
 
-######   PING (quick ping)                                         ###
+
+#	PING (quick ping)
+#_________________________________________________________________
 alias ping='ping -c 8 -i .2'
 
-######   SCRIPTS - List scripts (create dir if it doesn't exist)   ###
+
+#	PYTHON3
+#_________________________________________________________________
+alias py='python3'
+
+
+#	sudo shortcut
+#_________________________________________________________________
+alias S='sudo'
+
+
+#	SCRIPTS - List scripts (create dir if it doesn't exist)
+#_________________________________________________________________
 fn_scripts() {
 	DIR=~/scripts
 	if [ ! -d "$DIR" ]; then
@@ -86,8 +176,11 @@ fn_scripts() {
 	echo "Current directory is now ~/scripts. Use popd to return to the previous directory."
 }
 alias scripts='fn_scripts'
+alias scr='fn_scripts'
 
-######   SYSINFO - Generate a quick system report                  ###
+
+#	SYSINFO - Generate a quick system report
+#_________________________________________________________________
 fn_sysinfo() {
   OUTFILE=$HOME/.sysinfo
   echo "
@@ -130,17 +223,22 @@ fn_sysinfo() {
 alias sysinfo='fn_sysinfo'
 
 
-######   MACHINE (BASIC INFO) - basic info re: this PC             ###
+#	MACHINE (BASIC INFO) - basic info re: this PC
+#_________________________________________________________________
 alias thispc='uname -a'
 
-######   get top process eating cpu                                ###
+
+#	get top process eating cpu
+#_________________________________________________________________
 alias top10cpu='ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head'
 
-######  get top process eating memory                              ###
+
+#	get top process eating memory
+#_________________________________________________________________
 alias top10mem='ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head'
 
-######   Easy update & upgrade                                     ###
-alias upd8="sudo apt update && sudo apt upgrade"
 
-######   fix nano key bindings                                     ###
-alias fixnano="wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh"
+#	Easy update & upgrade
+#_________________________________________________________________
+alias upd8='sudo apt update && sudo apt upgrade -y'
+
