@@ -23,12 +23,6 @@ alias ...='cd ../.. && ls'
 alias ~='cd ~'
 
 
-#	List aliases
-#_________________________________________________________________
-alias lsal='alias'
-alias al='alias'
-
-
 #	EDIT .aliases then refresh (source) it
 #_________________________________________________________________
 alias als='nano ~/.aliases && source ~/.aliases'
@@ -94,11 +88,6 @@ alias edcy='[ -e "./docker-compose.yaml" ] && nano docker-compose.yaml || nano d
 alias edit='nano'
 
 
-#	EDIT .bashrc then refresh (source) it
-#_________________________________________________________________
-alias edbrc='nano ~/.bashrc && source ~/.bashrc'
-
-
 #	output file tree as text (ctrl+F!)
 #_________________________________________________________________
 alias filetree="find . -print | sed -e 's;[^/]*/;|____;g;s;____|; |;g' > .filetree && xdg-open .filetree"
@@ -107,17 +96,17 @@ alias filetree="find . -print | sed -e 's;[^/]*/;|____;g;s;____|; |;g' > .filetr
 #	fix nano key bindings
 #_________________________________________________________________
 alias fixnano="wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh" & aliases
-# alias alias_name="command_to_run"
 
 
 #	git pull
 #_________________________________________________________________
 alias gitpull='clear && echo "$GITTOKEN" | xclip -selection clipboard && git pull'
-
+# set env var GITTOKEN = [gittoken] in .bashrc
 
 #	git push
 #_________________________________________________________________
 alias gitpush='clear && echo "$GITTOKEN" | xclip -selection clipboard && git commit -m "commit" && git push origin main'
+# set env var GITTOKEN = [gittoken] in .bashrc
 
 
 #	git token
