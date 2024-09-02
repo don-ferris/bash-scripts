@@ -38,6 +38,7 @@ alias edal='nano ~/.aliases && source ~/.aliases'
 #	EDIT .bashrc then refresh (source) it
 #_________________________________________________________________
 alias brc='nano ~/.bashrc && source ~/.bashrc'
+alias edbrc='nano ~/.bashrc && source ~/.bashrc'
 
 
 #	CALC - CLI calculator
@@ -64,6 +65,7 @@ alias cpuinfo='lscpu'
 #	docker-compose DOWN
 #_________________________________________________________________
 alias dcdown='docker-compose down'
+alias dcdn='docker-compose down'
 
 
 #	docker-compose UP
@@ -104,113 +106,8 @@ alias filetree="find . -print | sed -e 's;[^/]*/;|____;g;s;____|; |;g' > .filetr
 
 #	fix nano key bindings
 #_________________________________________________________________
-alias fixnano="wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh"# Aliases
+alias fixnano="wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh" & aliases
 # alias alias_name="command_to_run"
-
-
-#	. (DOT) - ls current directory
-#_________________________________________________________________
-alias .='ls -lA --group-directories-first'
-
-
-#	.. (DOT DOT) - up one directory (& ls)
-#_________________________________________________________________
-alias ..='cd .. && ls'
-
-
-#	... (DOT DOT DOT) - up 2 directories (& ls)
-#_________________________________________________________________
-alias ...='cd ../.. && ls'
-
-
-#	HOME - shortcut to home directory (this may already be
-#	in place but if so, no harm done
-#_________________________________________________________________
-alias ~='cd ~'
-
-
-#	List aliases
-#_________________________________________________________________
-alias lsal='alias'
-alias al='alias'
-
-
-#	EDIT .aliases then refresh (source) it
-#_________________________________________________________________
-alias als='nano ~/.aliases && source ~/.aliases'
-alias edal='nano ~/.aliases && source ~/.aliases'
-
-
-#	EDIT .bashrc then refresh (source) it
-#_________________________________________________________________
-alias brc='nano ~/.bashrc && source ~/.bashrc'
-
-
-#	CALC - CLI calculator
-#_________________________________________________________________
-alias calc='bc -l'
-
-
-#	CD THEN LS - Change dir then list contents
-#_________________________________________________________________
-fn_cdls() {
-  cd "$1"
-  ls
-}
-alias cdd='fn_cdls'
-alias cdls='fn_cdls'
-alias lscd='fn_cdls'
-
-
-#	Get CPU info
-#_________________________________________________________________
-alias cpuinfo='lscpu'
-
-
-#	docker-compose DOWN
-#_________________________________________________________________
-alias dcdown='docker-compose down'
-
-
-#	docker-compose UP
-#_________________________________________________________________
-alias dcup='docker-compose up -d'
-
-
-#	INSTALL from .deb file
-#_________________________________________________________________
-alias deb='sudo dpkg -i'
-
-
-#   Download a file (wget) with resume by default
-#_________________________________________________________________
-alias download='wget -c'
-alias dl='wget -c'
-
-
-#	EDIT docker-compose.yml
-#_________________________________________________________________
-alias edcy='[ -e "./docker-compose.yaml" ] && nano docker-compose.yaml || nano docker-compose.yml'
-
-
-#	EDIT (file using nano editor)
-#_________________________________________________________________
-alias edit='nano'
-
-
-#	EDIT .bashrc then refresh (source) it
-#_________________________________________________________________
-alias edbrc='nano ~/.bashrc && source ~/.bashrc'
-
-
-#	output file tree as text (ctrl+F!)
-#_________________________________________________________________
-alias filetree="find . -print | sed -e 's;[^/]*/;|____;g;s;____|; |;g' > .filetree && xdg-open .filetree"
-
-
-#	fix nano key bindings
-#_________________________________________________________________
-alias fixnano="wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh"
 
 
 #	git pull
@@ -248,6 +145,12 @@ alias inst='apt install -y'
 alias install='apt install -y'
 
 
+#	List aliases
+#_________________________________________________________________
+alias lsal='alias'
+alias al='alias'
+
+
 #	MAKE DIR then CD into it
 #_________________________________________________________________
 fn_md () {
@@ -266,6 +169,11 @@ alias meminfo='free -m -l -t'
 #	IP (PUBLIC) - Print my public IP
 #_________________________________________________________________
 alias myip='curl ipinfo.io/ip'
+
+
+#	NUKE - force remove file(s*) or directory
+#_________________________________________________________________
+alias nuke='rm -rf'
 
 
 #	PING (quick ping)
