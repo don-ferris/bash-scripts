@@ -95,7 +95,7 @@ alias filetree="find . -print | sed -e 's;[^/]*/;|____;g;s;____|; |;g' > .filetr
 
 #	fix nano key bindings
 #_________________________________________________________________
-alias fixnano="wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh" & aliases
+alias fixnano='wget -c https://raw.githubusercontent.com/don-ferris/bash-scripts/main/fixnano.sh && bash ./fixnano.sh" & aliases'
 
 
 #	git pull
