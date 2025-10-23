@@ -4,13 +4,13 @@
 ![Bash](https://img.shields.io/badge/language-Bash-yellow)
 ![Debian-friendly](https://img.shields.io/badge/os-Debian%20based-lightgrey)
 
-A small collection of bash scripts and related files I wrote to make life easier and to make any (Debian-based) client or server machine behave the way I like. Below is a full, eye‑friendly index of every script/config in the repository. Short descriptions are populated from each script's header (the first commented line) when available.
+A collection of bash scripts and related files I wrote to make life easier and to make any (Debian-based) client or server machine behave the way I like. Below is a full, eye‑friendly index of every script/config in the repository. Short descriptions are populated from each script's header (the first commented line) when available.
 
 ---
 
 ## init
 
-This repository includes a short init script (named "init", no extension) intended to be run immediately after cloning. It performs the following actions:
+This repository includes a short init script that is intended to be run immediately after cloning. It performs the following actions:
 
 1. Rename the current directory from "bash-scripts" to "scripts" (if the cwd is named "bash-scripts").
 2. Ensure $HOME/scripts is added to PATH by updating ~/.bashrc.
@@ -25,7 +25,7 @@ chmod +x init && ./init
 
 ---
 
-## Scripts & files (table)
+## Scripts & files
 This table lists top-level files in the repository. Descriptions are taken from the first commented line of each file when present. To regenerate this table automatically, run the provided update-readme.sh generator which extracts first-line headers from scripts.
 
 <!-- SCRIPTS_TABLE_START -->
