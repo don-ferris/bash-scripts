@@ -1,27 +1,32 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # gitsync
-# A script to automate Git commit, pull, and push workflows
-# for multiple GitHub accounts using dedicated SSH keys.
-# Also provides a --update-readme command to regenerate the README scripts table.
-# This variant will run update_readme automatically only when a commit was created during sync.
+# Automate Git add/commit/pull(rebase)/push workflows across multiple GitHub accounts.
+# Includes: --update-readme (regenerate README table), auto-push README after update,
+# automatic tracking of new files by default, and conflict-time interactive choices.
+#
+# Behavior summary (as requested):
+# - New files are tracked automatically (git add --all) unless a problematic condition (rebase conflict) occurs.
+# - The script only prompts interactively if a rebase/pull fails (conflict) so you can choose how to proceed.
+# - README table updates are committed and pushed automatically when update_readme runs.
+# - .git_ID may contain leading comment lines (headers); the first non-comment line is used for parsing.
 
-# --- Configuration ---
+set -euo pipefail
+
 LOG_FILE="$HOME/gitsync.log"
 GIT_ID_FILE=".git_ID"
 SSH_DIR="$HOME/.ssh"
 
-# --- Helper Functions ---
 log_message() {
   local level="$1"; local message="$2"
   local timestamp; timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-  local log_entry="$timestamp [$level] $message"
-  echo "$log_entry" >> "$LOG_FILE"
-  echo "$log_entry"
+  local entry="$timestamp [$level] $message"
+  echo "$entry" >> "$LOG_FILE"
+  echo "$entry"
 }
 
 check_git_repo() {
-  if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     log_message "ERROR" "This is not a Git repository. Aborting."
     exit 1
   fi
@@ -60,12 +65,12 @@ get_account_details() {
   log_message "INFO" "Configuring for account: $GIT_USER_NAME"
 }
 
-# --- README update helper ---
+# --- README update helper (no backup; pushes README after commit) ---
 update_readme() {
   check_git_repo
 
   local README="README.md"
-  local TMP; TMP=$(mktemp)
+  local TMP; TMP=$(mktemp) || return 1
 
   log_message "INFO" "Building scripts table from top-level files..."
 
@@ -74,7 +79,6 @@ update_readme() {
 |---|---:|---|---|
 EOF
 
-  # List top-level files tracked or untracked at repo root
   mapfile -t files < <( (git ls-files --full-name | awk -F/ 'NF==1'; git ls-files --others --exclude-standard --full-name | awk -F/ 'NF==1') | sort -u )
 
   for name in "${files[@]}"; do
@@ -95,6 +99,10 @@ EOF
     local desc=""
     while IFS= read -r line; do
       local tline; tline="$(echo "$line" | sed -e 's/^[[:space:]]*//')"
+      # skip shebangs like #!/bin/bash
+      if [[ "$tline" =~ ^#! ]]; then
+        continue
+      fi
       if [[ "$tline" =~ ^# ]]; then
         desc="$(echo "$tline" | sed -e 's/^#\+//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
         break
@@ -114,7 +122,7 @@ EOF
   local END_MARKER="<!-- SCRIPTS_TABLE_END -->"
 
   if grep -q "$START_MARKER" "$README"; then
-    local NEWREADME; NEWREADME=$(mktemp)
+    local NEWREADME; NEWREADME=$(mktemp) || { rm -f "$TMP"; return 1; }
     awk -v start="$START_MARKER" -v end="$END_MARKER" -v tbl="$(cat "$TMP")" '
       BEGIN{inside=0}
       {
@@ -136,40 +144,119 @@ EOF
 
   rm -f "$TMP"
 
+  # Stage and commit README; then push the commit
   git add "$README"
   if git diff --staged --quiet; then
     log_message "INFO" "No changes to README to commit."
+    return 0
   else
     git commit -m "chore: update README scripts table"
     log_message "INFO" "Committed README update."
+    local branch; branch="$(git rev-parse --abbrev-ref HEAD)"
+    git push origin "$branch"
+    log_message "INFO" "Pushed README update to origin/$branch"
   fi
 }
 
-# --- Core Functions ---
-sync_repo() {
-  # make the function fail fast for errors we don't want to ignore
-  set -e
-  set -o pipefail
+# Handle a failed rebase/pull with interactive choices (only invoked on failure)
+handle_rebase_conflict() {
+  local branch="$1"
+  echo
+  echo "=== gitsync detected a rebase/pull failure (likely merge conflicts) ==="
+  echo "Options:"
+  echo "  [A] Attempt automatic recovery: abort rebase, stash local changes (incl. untracked), pull/rebase, pop stash and auto-commit local changes if applied cleanly."
+  echo "  [B] Enter interactive shell to resolve conflicts manually (you must run: git rebase --continue or fix and commit)."
+  echo "  [C] Abort: run 'git rebase --abort' and leave repository as before; exit."
+  printf "Choose [A/B/C]: "
+  IFS= read -r -n 1 choice
+  printf "\n"
+  choice="${choice^^}"
 
+  case "$choice" in
+    A)
+      log_message "INFO" "User chose automatic recovery: attempting rebase abort, stash, pull, and restore."
+      # Abort any in-progress rebase (safe if none)
+      git rebase --abort >/dev/null 2>&1 || true
+      local stash_name="gitsync-auto-recovery-$(date +%Y%m%d%H%M%S)"
+      git stash push --include-untracked -m "$stash_name"
+      log_message "INFO" "Stashed local changes as $stash_name"
+      if git pull --rebase origin "$branch"; then
+        log_message "INFO" "Pull/rebase succeeded after stashing."
+        # Try to pop stash
+        if git stash list | grep -q "$stash_name"; then
+          if git stash pop; then
+            log_message "INFO" "Stash popped successfully. Re-staging and committing local changes."
+            git add --all
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: restore local changes after rebase (auto)"
+              log_message "INFO" "Committed restored local changes."
+            else
+              log_message "INFO" "No staged changes after stash pop."
+            fi
+            return 0
+          else
+            log_message "WARN" "git stash pop produced conflicts. Please resolve conflicts manually."
+            echo "Conflicts occurred while applying the stash. Resolve them, then run 'git add <files>' and 'git rebase --continue' or 'git commit' as appropriate."
+            return 1
+          fi
+        else
+          log_message "INFO" "No stash entry found to pop (unexpected)."
+          return 0
+        fi
+      else
+        log_message "ERROR" "Automatic pull/rebase after stashing failed. Repository may require manual intervention."
+        return 1
+      fi
+      ;;
+    B)
+      log_message "INFO" "Dropping into interactive shell for manual conflict resolution."
+      echo "Interactive shell started. Resolve conflicts, then run: git rebase --continue"
+      echo "When finished, exit the shell to allow gitsync to continue."
+      $SHELL
+      # After the shell, check if rebase is still in progress
+      if git rebase --show-current-patch >/dev/null 2>&1; then
+        log_message "WARN" "Rebase still in progress after returning from shell. Please finish it manually."
+        return 1
+      else
+        log_message "INFO" "Assuming conflicts resolved. Continuing."
+        return 0
+      fi
+      ;;
+    C)
+      log_message "INFO" "User chose abort. Running 'git rebase --abort' and exiting."
+      git rebase --abort >/dev/null 2>&1 || true
+      return 2
+      ;;
+    *)
+      log_message "WARN" "Invalid option. Aborting."
+      return 2
+      ;;
+  esac
+}
+
+# --- Core sync function ---
+sync_repo() {
   log_message "INFO" "--- Starting Git Sync ---"
   check_git_repo
 
-  log_message "INFO" "Staging all local changes (add, modify, delete)."
-  git add --all
-
+  # Ensure .git_ID present and parse first non-comment line
   if [ ! -f "$GIT_ID_FILE" ]; then
     log_message "ERROR" "Missing $GIT_ID_FILE in this directory."
     log_message "ERROR" "Please run '$0 --id' to initialize this repo or create the file manually."
     log_message "ERROR" "Format: [remote_repo_name] | [account_abbreviation]"
     exit 1
   fi
-
-  local id_contents; id_contents=$(cat "$GIT_ID_FILE")
-  local remote_repo_name; remote_repo_name=$(echo "$id_contents" | awk -F ' *\\| *' '{print $1}')
-  local account_abbrev; account_abbrev=$(echo "$id_contents" | awk -F ' *\\| *' '{print $2}')
+  local id_line
+  id_line="$(grep -v '^[[:space:]]*#' "$GIT_ID_FILE" | sed -n '1p' || true)"
+  if [ -z "$id_line" ]; then
+    log_message "ERROR" "$GIT_ID_FILE does not contain a valid mapping line (after skipping comments)."
+    exit 1
+  fi
+  local remote_repo_name; remote_repo_name="$(echo "$id_line" | awk -F ' *\\| *' '{print $1}')"
+  local account_abbrev; account_abbrev="$(echo "$id_line" | awk -F ' *\\| *' '{print $2}')"
 
   if [ -z "$remote_repo_name" ] || [ -z "$account_abbrev" ]; then
-    log_message "ERROR" "Invalid $GIT_ID_FILE format. Expected '[repo_name] | [abbrev]'."
+    log_message "ERROR" "Invalid $GIT_ID_FILE format. Expected '[repo_name] | [abbrev]' on first non-comment line."
     exit 1
   fi
 
@@ -187,11 +274,12 @@ sync_repo() {
   git config user.email "$GIT_USER_EMAIL"
   log_message "INFO" "Set local Git config to $GIT_USER_NAME <$GIT_USER_EMAIL>"
 
+  local branch; branch="$(git rev-parse --abbrev-ref HEAD)"
   local expected_origin="git@github.com:$GIT_USER_NAME/$remote_repo_name.git"
-  local current_origin; current_origin=$(git remote get-url origin 2>/dev/null || echo "")
+  local current_origin; current_origin="$(git remote get-url origin 2>/dev/null || true)"
 
   if [ "$current_origin" != "$expected_origin" ]; then
-    log_message "WARN" "Remote 'origin' URL is incorrect."
+    log_message "WARN" "Remote 'origin' URL is incorrect or missing."
     if [ -z "$current_origin" ]; then
       log_message "INFO" "Adding remote 'origin': $expected_origin"
       git remote add origin "$expected_origin"
@@ -203,71 +291,63 @@ sync_repo() {
     log_message "INFO" "Remote 'origin' is correct."
   fi
 
-  local current_branch; current_branch=$(git rev-parse --abbrev-ref HEAD)
-  log_message "INFO" "Syncing branch: $current_branch"
+  # Default behavior: automatically track new files by staging everything
+  log_message "INFO" "Auto-tracking new files: staging all changes now."
+  git add --all
 
-  local stash_needed=false
-  if [ -n "$(git status --porcelain | grep '^\?\?')" ]; then
-    stash_needed=true
-  fi
-
-  if [ "$stash_needed" = true ]; then
-    log_message "INFO" "Stashing untracked files..."
-    git stash push --keep-index --include-untracked -m "gitsync-temp-stash"
-    log_message "INFO" "Temporary stash created."
-  else
-    log_message "INFO" "Working directory is clean of untracked files. No stash needed."
-  fi
-
-  # track whether we created a commit in this sync run
+  # If there are staged changes, commit them
   local commit_made=false
-
-  if ! git diff-index --quiet --cached HEAD --; then
+  if ! git diff --cached --quiet; then
     log_message "INFO" "Staged changes detected."
     local commit_message
     read -p "Enter commit message: " commit_message
     if [ -z "$commit_message" ]; then
       log_message "ERROR" "Commit message cannot be empty. Aborting."
-      if [ "$stash_needed" = true ] && git stash list | grep -q "gitsync-temp-stash"; then
-        git stash pop || log_message "WARN" "Could not pop stash on abort. Manual cleanup needed."
-      fi
       exit 1
     fi
-    log_message "INFO" "Committing staged changes..."
     git commit -m "$commit_message"
     commit_made=true
   else
     log_message "INFO" "No staged changes to commit."
   fi
 
+  # Attempt pull with rebase; only prompt if rebase/pull fails (conflict)
   log_message "INFO" "Pulling remote changes with rebase..."
-  git pull --rebase origin "$current_branch"
-
-  log_message "INFO" "Pushing changes to origin $current_branch..."
-  git push origin "$current_branch"
-
-  if [ "$stash_needed" = true ] && git stash list | grep -q "gitsync-temp-stash"; then
-    log_message "INFO" "Applying temporarily stashed changes..."
-    if ! git stash pop; then
-      log_message "WARN" "Could not automatically apply stash. Manual intervention required."
+  if git pull --rebase origin "$branch"; then
+    log_message "INFO" "Pull/rebase succeeded."
+  else
+    log_message "ERROR" "Pull/rebase failed (likely due to conflicts)."
+    handle_rebase_conflict "$branch"
+    local rc=$?
+    if [ "$rc" -eq 0 ]; then
+      log_message "INFO" "Recovery/interactive resolution succeeded; continuing."
+    elif [ "$rc" -eq 1 ]; then
+      log_message "WARN" "Recovery attempted but unresolved conflicts remain. Please resolve manually."
       exit 1
+    else
+      log_message "INFO" "User aborted during conflict handling. Exiting."
+      exit 0
     fi
   fi
 
-  # NEW: run README update only if we actually created a commit this run
+  # Push local commits (including README commit that update_readme will push)
+  log_message "INFO" "Pushing changes to origin/$branch..."
+  git push origin "$branch"
+
+  # If we created a commit during this run, regenerate README (update_readme will commit+push)
   if [ "$commit_made" = true ]; then
-    log_message "INFO" "Commit was made during this sync; regenerating README scripts table..."
+    log_message "INFO" "Local commit was created during sync; regenerating README scripts table..."
     if ! update_readme; then
       log_message "WARN" "update_readme failed or returned an error."
     fi
   else
-    log_message "INFO" "No commit was made during this sync; skipping README update."
+    log_message "INFO" "No local commit was created during this sync; skipping README update."
   fi
 
-  log_message "SUCCESS" "--- Sync complete for $GIT_USER_NAME/$remote_repo_name ---"
+  log_message "SUCCESS" "--- Sync complete for $GIT_USER_NAME/$remote_repo_name on branch $branch ---"
 }
 
-# --- Repo initialization --- (unchanged)
+# --- Repo initialization (unchanged) ---
 initialize_repos() {
   log_message "INFO" "--- Starting Repo Initialization ---"
   log_message "INFO" "Scanning $HOME for Git repositories. This may take a while..."
@@ -337,17 +417,16 @@ initialize_repos() {
   log_message "INFO" "--- Repo Initialization Complete ---"
 }
 
-# --- Main script entry ---
 show_usage() {
-  echo "Usage: $0 [COMMAND]"
-  echo
-  echo "Commands:"
-  echo "  (no command)      Syncs the current Git repository."
-  echo "  --id              Initialize repos under \$HOME (create .git_ID files)."
-  echo "  --update-readme   Generate/update README.md scripts table from top-level files and commit it."
-  echo "  --help            Show this help message."
-  echo
-  echo "Log file: $LOG_FILE"
+  cat <<'USAGE'
+Usage: gitsync [COMMAND]
+
+Commands:
+  (no command)        Syncs the current Git repository (auto-add, commit if changes, pull --rebase, push).
+  --id                Interactive repo initialization (create .git_ID files).
+  --update-readme     Generate/update README.md scripts table from top-level files and commit+push it.
+  --help              Show this help message.
+USAGE
 }
 
 main() {
