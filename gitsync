@@ -1,8 +1,10 @@
 #!/bin/bash
 
-# gitsync.sh
+# gitsync
 # A script to automate Git commit, pull, and push workflows
 # for multiple GitHub accounts using dedicated SSH keys.
+# Featuring auto-updates to README.md and finding/initializing 
+# local repos (`gitsync --id`)
 
 # --- Configuration ---
 
