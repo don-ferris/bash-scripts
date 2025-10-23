@@ -1,0 +1,369 @@
+#!/bin/bash
+
+# gitsync.sh
+# A script to automate Git commit, pull, and push workflows
+# for multiple GitHub accounts using dedicated SSH keys.
+
+# --- Configuration ---
+
+# NOTE: We do *not* set -e or -o pipefail globally,
+# as it interferes with the interactive 'initialize_repos' function.
+# These will be set *inside* the 'sync_repo' function instead.
+
+# Location of the log file
+LOG_FILE="$HOME/gitsync.log"
+# The name of the ID file in each repo
+GIT_ID_FILE=".git_ID"
+# Directory where SSH keys are stored
+SSH_DIR="$HOME/.ssh"
+
+# --- Helper Functions ---
+
+# Logs a message to both the console and the log file.
+# Usage: log_message "LEVEL" "Your message here"
+log_message() {
+  local level="$1"
+  local message="$2"
+  local timestamp
+  timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+  local log_entry="$timestamp [$level] $message"
+  
+  # Log to file
+  echo "$log_entry" >> "$LOG_FILE"
+  # Log to console
+  echo "$log_entry"
+}
+
+# Checks if the current directory is a Git repository.
+# Exits if it's not.
+check_git_repo() {
+  if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    log_message "ERROR" "This is not a Git repository. Aborting."
+    exit 1
+  fi
+  log_message "INFO" "Git repository verified."
+}
+
+# --- Account Management ---
+
+# Sets global variables for account details based on the abbreviation.
+# Usage: get_account_details "abbrev"
+# Sets: GIT_USER_NAME, GIT_USER_EMAIL, SSH_KEY_PATH
+get_account_details() {
+  local abbrev="$1"
+  
+  case "$abbrev" in
+    "df")
+      GIT_USER_NAME="don-ferris"
+      GIT_USER_EMAIL="dev@donferris.me"
+      SSH_KEY_PATH="$SSH_DIR/id_ed25519-github-ssh-df"
+      ;;
+    "cx")
+      GIT_USER_NAME="convergenx"
+      GIT_USER_EMAIL="convergenx@donferris.me"
+      SSH_KEY_PATH="$SSH_DIR/id_ed25519-github-ssh-cx"
+      ;;
+    "ncmm")
+      GIT_USER_NAME="network-configurator-for-mere-mortals"
+      GIT_USER_EMAIL="ncmm@donferris.me"
+      SSH_KEY_PATH="$SSH_DIR/id_ed25519-github-ssh-ncmm"
+      ;;
+    "dlc")
+      GIT_USER_NAME="digital-lifestyle-creations"
+      GIT_USER_EMAIL="dev@digitallifestylecreations.com"
+      SSH_KEY_PATH="$SSH_DIR/id_ed25519-github-ssh-dlc"
+      ;;
+    *)
+      log_message "ERROR" "Unknown account abbreviation '$abbrev' in $GIT_ID_FILE."
+      log_message "ERROR" "Valid abbreviations are: df, cx, ncmm, dlc."
+      exit 1
+      ;;
+  esac
+  
+  log_message "INFO" "Configuring for account: $GIT_USER_NAME"
+}
+
+# --- Core Functions ---
+
+# The main sync function.
+# Automates the add, commit, pull, and push process.
+sync_repo() {
+  # Exit immediately if a command exits with a non-zero status.
+  set -e
+  # Exit immediately if a command in a pipeline fails.
+  set -o pipefail
+
+  log_message "INFO" "--- Starting Git Sync ---"
+  check_git_repo
+
+  # 0. STAGE ALL LOCAL CHANGES (FIX FOR DELETED FILES)
+  # This is the key fix! It moves all deletions/modifications/additions 
+  # to the staged area (the index), ready for the commit in 4b.
+  log_message "INFO" "Staging all local changes (add, modify, delete)."
+  git add --all 
+
+  # 1. Read the .git_ID file
+  if [ ! -f "$GIT_ID_FILE" ]; then
+    log_message "ERROR" "Missing $GIT_ID_FILE in this directory."
+    log_message "ERROR" "Please run '$0 --id' to initialize this repo or create the file manually."
+    log_message "ERROR" "Format: [remote_repo_name] | [account_abbreviation]"
+    exit 1
+  fi
+  
+  local id_contents
+  id_contents=$(cat "$GIT_ID_FILE")
+  
+  # Parse the file. Uses awk to handle whitespace around the '|'
+  local remote_repo_name
+  remote_repo_name=$(echo "$id_contents" | awk -F ' *\\| *' '{print $1}')
+  local account_abbrev
+  account_abbrev=$(echo "$id_contents" | awk -F ' *\\| *' '{print $2}')
+  
+  if [ -z "$remote_repo_name" ] || [ -z "$account_abbrev" ]; then
+    log_message "ERROR" "Invalid $GIT_ID_FILE format. Expected '[repo_name] | [abbrev]'."
+    exit 1
+  fi
+
+  # 2. Get account details and configure Git
+  get_account_details "$account_abbrev"
+  
+  if [ ! -f "$SSH_KEY_PATH" ]; then
+    log_message "ERROR" "SSH key not found at $SSH_KEY_PATH"
+    log_message "ERROR" "Please ensure the key exists and matches the naming convention."
+    exit 1
+  fi
+  
+  # Override Git's SSH command to use the specific key
+  # This is the magic for multiple accounts!
+  export GIT_SSH_COMMAND="ssh -i $SSH_KEY_PATH -o IdentitiesOnly=yes"
+  log_message "INFO" "Using SSH key: $SSH_KEY_PATH"
+  
+  # Set local git config for this repo
+  git config user.name "$GIT_USER_NAME"
+  git config user.email "$GIT_USER_EMAIL"
+  log_message "INFO" "Set local Git config to $GIT_USER_NAME <$GIT_USER_EMAIL>"
+
+  # 3. Verify and set the remote origin URL
+  local expected_origin="git@github.com:$GIT_USER_NAME/$remote_repo_name.git"
+  local current_origin
+  current_origin=$(git remote get-url origin 2>/dev/null || echo "")
+  
+  if [ "$current_origin" != "$expected_origin" ]; then
+    log_message "WARN" "Remote 'origin' URL is incorrect."
+    if [ -z "$current_origin" ]; then
+      log_message "INFO" "Adding remote 'origin': $expected_origin"
+      git remote add origin "$expected_origin"
+    else
+      log_message "INFO" "Updating remote 'origin' to: $expected_origin"
+      git remote set-url origin "$expected_origin"
+    fi
+  else
+    log_message "INFO" "Remote 'origin' is correct."
+  fi
+
+  # 4. The Sync Process
+  local current_branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+  log_message "INFO" "Syncing branch: $current_branch"
+
+  local stash_needed=false
+  # We check for UNTRACKED files that need to be stashed away so they don't cause conflicts
+  if [ -n "$(git status --porcelain | grep '^\?\?')" ]; then
+      stash_needed=true
+  fi
+  
+  # 4a. Temporarily stash any remaining UNTRACKED files
+  if [ "$stash_needed" = true ]; then
+      log_message "INFO" "Stashing untracked files..."
+      # Use --keep-index to ensure staged changes remain in the index for the commit in 4b.
+      git stash push --keep-index --include-untracked -m "gitsync-temp-stash"
+      log_message "INFO" "Temporary stash created."
+  else
+      log_message "INFO" "Working directory is clean of untracked files. No stash needed."
+  fi
+
+  local commit_made=false
+  # 4b. Check if there are STAGED changes to commit
+  # git diff-index returns non-zero if there are staged changes (index differs from HEAD)
+  if ! git diff-index --quiet --cached HEAD --; then
+    log_message "INFO" "Staged changes detected."
+    # Prompt for commit message
+    local commit_message
+    read -p "Enter commit message: " commit_message
+    
+    if [ -z "$commit_message" ]; then
+      log_message "ERROR" "Commit message cannot be empty. Aborting."
+      # We must pop the stash if we abort, but ONLY if we created one!
+      if [ "$stash_needed" = true ] && git stash list | grep -q "gitsync-temp-stash"; then
+          git stash pop || log_message "WARN" "Could not pop stash on abort. Manual cleanup needed."
+      fi
+      exit 1
+    fi
+    
+    # Commit the staged changes
+    log_message "INFO" "Committing staged changes..."
+    git commit -m "$commit_message"
+    commit_made=true
+  else
+    log_message "INFO" "No staged changes to commit."
+  fi
+  
+  # 4c. Pull remote changes (with rebase)
+  # This pulls remote changes and replays our new commit (if any) on top
+  log_message "INFO" "Pulling remote changes with rebase..."
+  git pull --rebase origin "$current_branch"
+  
+  # 4d. Push changes (if we made a commit or if we are behind)
+  log_message "INFO" "Pushing changes to origin $current_branch..."
+  git push origin "$current_branch"
+  
+  # 4e. Restore the temporarily stashed changes
+  if [ "$stash_needed" = true ] && git stash list | grep -q "gitsync-temp-stash"; then
+    log_message "INFO" "Applying temporarily stashed changes..."
+    if ! git stash pop; then
+      log_message "WARN" "Could not automatically apply stash."
+      log_message "WARN" "Please resolve conflicts and run 'git stash drop' manually."
+      # We exit with an error code so the user knows something needs attention
+      exit 1
+    fi
+  fi
+  
+  log_message "SUCCESS" "--- Sync complete for $GIT_USER_NAME/$remote_repo_name ---"
+}
+
+# Finds and initializes Git repos in the home directory.
+initialize_repos() {
+  log_message "INFO" "--- Starting Repo Initialization ---"
+  log_message "INFO" "Scanning $HOME for Git repositories. This may take a while..."
+
+  # Use process substitution with an explicit file descriptor (3).
+  # 'find' will write its output to file descriptor 3.
+  # This leaves file descriptor 0 (stdin) free for 'read' and 'select'
+  # to correctly get input from the keyboard.
+  exec 3< <(find "$HOME" -name ".git" -type d -prune \
+             -not -path "*/.cache/*" \
+             -not -path "*/.config/*" \
+             -not -path "*/.local/*" \
+             -not -path "*/node_modules/*" \
+             -not -path "*/Library/*" \
+             -not -path "*/Applications/*" \
+             -not -path "*/Music/*" \
+             -not -path "*/Movies/*" \
+             -not -path "*/Pictures/*" \
+             -not -path "*/Downloads/*" \
+             2>/dev/null) # Silence "Permission denied"
+
+  # The 'while' loop now reads from file descriptor 3 (<&3)
+  while IFS= read -r git_dir <&3; do
+      local repo_path
+      repo_path=$(dirname "$git_dir")
+      local id_file_path="$repo_path/$GIT_ID_FILE"
+      
+      echo # Add a newline for readability
+      log_message "INFO" "Found Git repo: $repo_path"
+      
+      if [ -f "$id_file_path" ]; then
+        log_message "INFO" "Found existing $GIT_ID_FILE: $(cat "$id_file_path")"
+        # This 'read' will now correctly wait for user input from stdin
+        read -p "Overwrite? (y/N): " overwrite
+        if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
+          log_message "INFO" "Skipping."
+          continue
+        fi
+      fi
+      
+      # Prompt for account
+      echo "Which GitHub account is this repo for?"
+      local account_options=("df (don-ferris)" "cx (convergenx)" "ncmm (network...)" "dlc (digital...)" "skip")
+      
+      # This 'select' will now correctly wait for user input from stdin
+      select opt in "${account_options[@]}"; do
+        case "$opt" in
+          "df (don-ferris)") 
+            local abbrev="df"
+            break 
+            ;;
+          "cx (convergenx)") 
+            local abbrev="cx"
+            break 
+            ;;
+          "ncmm (network...)") 
+            local abbrev="ncmm"
+            break 
+            ;;
+          "dlc (digital...)") 
+            local abbrev="dlc"
+            break 
+            ;;
+          "skip") 
+            local abbrev="skip"
+            break 
+            ;;
+          *) echo "Invalid option $REPLY";;
+        esac
+      done
+      
+      if [ "$abbrev" == "skip" ]; then
+        log_message "INFO" "Skipping $repo_path"
+        continue
+      fi
+      
+      # Prompt for repo name
+      local remote_name
+      # This 'read' will now correctly wait for user input from stdin
+      read -p "Enter the remote repository name (e.g., 'my-project'): " remote_name
+      if [ -z "$remote_name" ]; then
+        log_message "ERROR" "Remote name cannot be empty. Skipping."
+        continue
+      fi
+      
+      # Write the .git_ID file
+      echo "$remote_name | $abbrev" > "$id_file_path"
+      log_message "SUCCESS" "Created $id_file_path with content: '$remote_name | $abbrev'"
+  done
+
+  # Close file descriptor 3
+  exec 3<&-
+  
+  log_message "INFO" "--- Repo Initialization Complete ---"
+}
+
+# --- Main Script Entry ---
+
+# Shows how to use the script.
+show_usage() {
+  echo "Usage: $0 [COMMAND]"
+  echo
+  echo "Commands:"
+  echo "  (no command)  Syncs the current Git repository."
+  echo "                - Stages all local changes (additions, modifications, and deletions)."
+  echo "                - Prompts for a commit message for staged changes."
+  echo "                - Pulls (rebase) and pushes to the remote."
+  echo "                - Uses the account defined in the .git_ID file."
+  echo
+  echo "  --id          Scans your home directory for Git repos to initialize."
+  echo "                - Prompts you to create a .git_ID file for each repo found."
+  echo
+  echo "  --help        Shows this help message."
+  echo
+  echo "Log file: $LOG_FILE"
+}
+
+# Main logic to parse arguments
+main() {
+  if [ "$1" == "--id" ]; then
+    initialize_repos
+  elif [ "$1" == "--help" ]; then
+    show_usage
+  elif [ -n "$1" ]; then
+    log_message "ERROR" "Unknown command: $1"
+    show_usage
+    exit 1
+  else
+    # Default action: sync the current repo
+    sync_repo
+  fi
+}
+
+# Run the main function with all provided arguments
+main "$@"
