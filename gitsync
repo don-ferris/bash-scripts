@@ -29,7 +29,7 @@ log_message() {
   printf '%s\n' "$entry"
 }
 
-# Verify we're inside a git repo
+# Basic repo check
 check_git_repo() {
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     log_message "ERROR" "This is not a Git repository. Aborting."
@@ -37,7 +37,7 @@ check_git_repo() {
   fi
 }
 
-# Map account abbreviations to names/emails/ssh keys
+# Account mapping
 get_account_details() {
   local abbrev="$1"
   case "$abbrev" in
@@ -70,7 +70,7 @@ get_account_details() {
   log_message "INFO" "Configuring for account: $GIT_USER_NAME"
 }
 
-# === README update helper (per your spec) ===
+# === README update helper (improved) ===
 update_readme() {
   check_git_repo
 
@@ -85,10 +85,10 @@ update_readme() {
   log_message "INFO" "Building scripts table from top-level files (File -> Description)..."
 
   # Single header row only
-  cat > "$TMP" <<'EOF'
+  cat > "$TMP" <<'TABLE_EOF'
 | File | Description |
 |---|---|
-EOF
+TABLE_EOF
 
   # Gather top-level files (tracked + untracked at repo root)
   mapfile -t files < <(
@@ -99,7 +99,7 @@ EOF
   )
 
   for name in "${files[@]}"; do
-    # Skip README and git metadata and directories
+    # Skip README and common git metadata and directories
     case "$name" in
       README.md|.git*|.github|.gitignore) continue ;;
     esac
@@ -109,42 +109,42 @@ EOF
     local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/blob/${BRANCH}/${name}"
     local file_link="[\`${name}\`](${url})"
 
-    # Extract description per rule:
-    # - skip shebangs
-    # - find first contiguous comment block at file top
-    # - if first comment equals filename (case-insensitive) skip it and use subsequent lines
-    # - concatenate comment lines until empty comment line or first non-comment non-shebang line
+    # Extract description:
+    # 1) Try to collect a top comment block (skip shebangs). If the first comment equals the filename, skip it.
+    # 2) If no comment header, infer from first few non-comment lines (up to 3), then append " (no header; inferred)"
     local desc=""
     local first_comment_seen=0
     local include_from_here=0
+    # We'll collect up to 3 inference lines if needed
+    local -a infer_lines=()
 
     while IFS= read -r line; do
-      # trim leading spaces for test
+      # trim leading spaces
       local tline
       tline="$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//')"
-      # skip shebang entirely
+
+      # skip shebangs entirely
       if [[ "$tline" =~ ^#! ]]; then
         continue
       fi
 
       if [[ "$tline" =~ ^# ]]; then
-        # extract comment text
+        # comment line
         local comment
         comment="$(printf '%s' "$tline" | sed -e 's/^#\+//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
-        # if the comment is empty (line with just "#") treat as break
+        # if blank comment line -> treat as break of comment-block
         if [ -z "$comment" ]; then
-          # blank comment line => stop collecting
           break
         fi
 
         if [ "$first_comment_seen" -eq 0 ]; then
           first_comment_seen=1
-          # compare lowercased comment to filename
+          # compare lowercase to filename
           local lc_comment lc_name
           lc_comment="$(printf '%s' "$comment" | tr '[:upper:]' '[:lower:]')"
           lc_name="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
           if [ "$lc_comment" = "$lc_name" ]; then
-            # skip this first comment line, start including subsequent comment lines
+            # skip first comment line equal to filename
             include_from_here=1
             desc=""
             continue
@@ -155,30 +155,47 @@ EOF
           fi
         else
           if [ "$include_from_here" -eq 1 ]; then
-            # append with a space separator
             desc="${desc:+$desc }${comment}"
             continue
           else
-            # we saw comment but not including; should not happen, break
             break
           fi
         fi
       else
-        # non-comment, non-shebang line
+        # non-comment line
         if [ "$first_comment_seen" -eq 1 ]; then
+          # end of comment block
           break
         else
-          # no leading comment block -> nothing to collect
-          break
+          # no comment block; collect inference lines (up to 3), then stop once we have them
+          # ignore blank lines
+          if [ -n "$tline" ]; then
+            infer_lines+=("$tline")
+            if [ "${#infer_lines[@]}" -ge 3 ]; then
+              break
+            fi
+          fi
         fi
       fi
     done < "$name"
+
+    if [ -z "$desc" ] && [ "${#infer_lines[@]}" -gt 0 ]; then
+      # create an inferred description from the first non-comment lines
+      # join infer_lines with " ; " up to ~200 chars
+      local joined
+      joined="$(printf '%s ; ' "${infer_lines[@]}" | sed 's/ ; $//')"
+      # trim to 220 chars if needed
+      if [ "${#joined}" -gt 220 ]; then
+        joined="${joined:0:217}..."
+      fi
+      desc="${joined} (no header; inferred)"
+    fi
 
     if [ -z "$desc" ]; then
       desc="(no header; inferred)"
     fi
 
-    # Escape pipe characters to keep Markdown table valid
+    # Escape pipe characters so the Markdown table stays valid
     desc="${desc//|/\\|}"
 
     printf "| %s | %s |\n" "$file_link" "$desc" >> "$TMP"
@@ -188,25 +205,38 @@ EOF
   local END_MARKER="<!-- SCRIPTS_TABLE_END -->"
 
   if grep -qF "$START_MARKER" "$README"; then
-    # Replace content between markers with our table
+    # Replace content between markers with our table, and drop a stray plain header immediately preceding the START_MARKER if present
     local NEWREADME
     NEWREADME=$(mktemp) || { rm -f "$TMP"; return 1; }
 
-    awk -v start="$START_MARKER" -v end="$END_MARKER" -v tbl="$(cat "$TMP")" '
-      BEGIN{inside=0}
+    awk -v start="$START_MARKER" -v end="$END_MARKER" -v tblfile="$TMP" '
       {
-        if(index($0,start)){
-          print $0
-          print tbl
-          inside=1
-          next
+        lines[NR] = $0
+      }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (index(lines[i], start)) {
+            # If previous line looks like an old header (contains "File" and "Description" or "Raw link" etc), skip it
+            if (i > 1 && lines[i-1] ~ /(Raw link|File[[:space:]]*Type|\|[[:space:]]*File|File[[:space:]]Description)/) {
+              for (j=1; j<=i-2; j++) print lines[j]
+            } else {
+              for (j=1; j<=i-1; j++) print lines[j]
+            }
+            print lines[i]
+            # print table from tmp file now
+            while ((getline t < tblfile) > 0) print t
+            # print until end marker is found and then continue after it
+            k = i+1
+            while (k <= NR && index(lines[k], end) == 0) k++
+            if (k <= NR) {
+              print lines[k]
+              for (j = k+1; j <= NR; j++) print lines[j]
+            }
+            exit
+          }
         }
-        if(index($0,end)){
-          print $0
-          inside=0
-          next
-        }
-        if(!inside) print $0
+        # start marker not found: print whole file, then append table
+        for (i=1;i<=NR;i++) print lines[i]
       }' "$README" > "$NEWREADME"
 
     mv "$NEWREADME" "$README"
@@ -240,7 +270,7 @@ EOF
   fi
 }
 
-# === Conflict handling helper ===
+# --- Conflict handling helper (unchanged) ---
 handle_rebase_conflict() {
   local branch="$1"
   echo
@@ -298,11 +328,10 @@ handle_rebase_conflict() {
   esac
 }
 
-# === Main sync flow ===
+# --- Main sync flow (unchanged behavior) ---
 sync_repo() {
   check_git_repo
 
-  # Ensure .git_ID exists and parse first non-comment line
   if [ ! -f "$GIT_ID_FILE" ]; then
     log_message "ERROR" "Missing $GIT_ID_FILE in this directory."
     log_message "ERROR" "Please run '$0 --id' to initialize this repo or create the file manually."
@@ -362,7 +391,6 @@ sync_repo() {
 
   local commit_made=false
 
-  # If there are staged changes, commit them
   if ! git diff --cached --quiet; then
     log_message "INFO" "Staged changes detected."
     local commit_message
@@ -377,7 +405,6 @@ sync_repo() {
     log_message "INFO" "No staged changes to commit."
   fi
 
-  # Pull remote changes with rebase
   log_message "INFO" "Pulling remote changes with rebase..."
   if git pull --rebase origin "$branch"; then
     log_message "INFO" "Pull/rebase succeeded."
@@ -396,32 +423,27 @@ sync_repo() {
     fi
   fi
 
-  # Push local commits
   log_message "INFO" "Pushing changes to origin/$branch..."
   git push origin "$branch"
 
-  # If commit was created, regenerate README (update_readme will commit+push)
   if [ "$commit_made" = true ]; then
-    log_message "INFO" "Commit created during this run; regenerating README table..."
+    log_message "INFO" "Local commit created; regenerating README table..."
     if ! update_readme; then
       log_message "WARN" "update_readme failed or returned an error."
     fi
   else
-    log_message "INFO" "No local commit created during this run; skipping README update."
+    log_message "INFO" "No local commit created; skipping README update."
   fi
 
   log_message "SUCCESS" "Sync complete for $GIT_USER_NAME/$remote_repo_name on branch $branch"
 }
 
-# === Repo initialization (unchanged behavior) ===
+# Placeholder: initialization function if you use it
 initialize_repos() {
-  log_message "INFO" "initialize_repos called (unchanged)"
-  # Existing initialize_repos behavior from previous versions should be placed here.
-  # If you want me to paste a full initialize_repos implementation, tell me and I'll add it.
+  log_message "INFO" "initialize_repos called (placeholder)"
   :
 }
 
-# === CLI / main ===
 show_usage() {
   cat <<'USAGE'
 Usage: gitsync [COMMAND]
