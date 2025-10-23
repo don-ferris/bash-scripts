@@ -33,12 +33,12 @@ This table lists top-level files in the repository. Descriptions are taken from 
 <!-- END SCRIPTS -->
 
 <!-- SCRIPTS_TABLE_START -->
-| File | Type | Description (first comment line if present) | Notes |
-|---|---:|---|---|
-| `.aliases` | config | Aliases |  |
-| `etc-nanorc` | script | etc-nanorc |  |
-| `fixnano.sh` | script | fixnano.sh |  |
-| `gitsync` | script | gitsync |  |
-| `init` | file | init |  |
-| `SrvSetup` | script | SrvSetup |  |
+| File | Description |
+|---|---|
+| [`.aliases`](https://github.com/don-ferris/bash-scripts/blob/main/.aliases) | Aliases A collection of keyboard shortcuts to make the bash shell more intuitive and allow for faster command execution. alias alias_name="command_to_run" |
+| [`etc-nanorc`](https://github.com/don-ferris/bash-scripts/blob/main/etc-nanorc) | modified nanorc file which configures the nano text editor for mouse support and to use common key bindings |
+| [`fixnano.sh`](https://github.com/don-ferris/bash-scripts/blob/main/fixnano.sh) | a script to download and install a modified /etc/nanorc config file to enable mouse support in the nano text editor and to enable common key bindings (e.g. Ctrl+X = cut; Ctrl+V = Paste; Ctrl+S = Save, Ctrl+F = Find, etc.) |
+| [`gitsync`](https://github.com/don-ferris/bash-scripts/blob/main/gitsync) | (no header; inferred) |
+| [`init`](https://github.com/don-ferris/bash-scripts/blob/main/init) | Initialize this repo after cloning: - rename directory "bash-scripts" -> "scripts" (if applicable) - ensure $HOME/scripts exists and is added to PATH via ~/.bashrc (appended) - copy .aliases to $HOME/.aliases - append lines to ~/.bashrc to source ~/.aliases and add $HOME/scripts to PATH (if not already present) - source ~/.bashrc in the current shell and show loaded aliases - prompt (read -n 1) to run fixnano (enables nano mouse support and common key bindings) |
+| [`SrvSetup`](https://github.com/don-ferris/bash-scripts/blob/main/SrvSetup) | This script installs Git, configures SSH keys, pulls my bash-scripts repo, ensures .bashrc sources .aliases, optionally runs fixnano.sh, Sets hostname, optionally sets static IP, and optionally installs Docker. |
 <!-- SCRIPTS_TABLE_END -->
