@@ -223,7 +223,7 @@ TABLE_EOF
               for (j=1; j<=i-1; j++) print lines[j]
             }
             print lines[i]
-            # print table from tmp file now
+            # print table from tmp file
             while ((getline t < tblfile) > 0) print t
             # print until end marker is found and then continue after it
             k = i+1
