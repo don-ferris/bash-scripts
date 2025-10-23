@@ -31,3 +31,14 @@ This table lists top-level files in the repository. Descriptions are taken from 
 | File | Type | Description (first comment line if present) | Raw link |
 |---|---:|---|---|
 <!-- END SCRIPTS -->
+
+<!-- SCRIPTS_TABLE_START -->
+| File | Type | Description (first comment line if present) | Notes |
+|---|---:|---|---|
+| `.aliases` | config | Aliases |  |
+| `etc-nanorc` | script | etc-nanorc |  |
+| `fixnano.sh` | script | fixnano.sh |  |
+| `gitsync` | script | gitsync |  |
+| `init` | file | init |  |
+| `SrvSetup` | script | SrvSetup |  |
+<!-- SCRIPTS_TABLE_END -->
