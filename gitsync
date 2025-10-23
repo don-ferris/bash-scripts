@@ -70,7 +70,7 @@ get_account_details() {
   log_message "INFO" "Configuring for account: $GIT_USER_NAME"
 }
 
-# === README update helper (improved) ===
+# === README update helper (fixed) ===
 update_readme() {
   check_git_repo
 
@@ -115,7 +115,6 @@ TABLE_EOF
     local desc=""
     local first_comment_seen=0
     local include_from_here=0
-    # We'll collect up to 3 inference lines if needed
     local -a infer_lines=()
 
     while IFS= read -r line; do
@@ -132,9 +131,17 @@ TABLE_EOF
         # comment line
         local comment
         comment="$(printf '%s' "$tline" | sed -e 's/^#\+//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
-        # if blank comment line -> treat as break of comment-block
+
+        # If this is an empty comment (a line that is just "#" or "#   "), treat differently:
+        # - If we haven't seen any comment yet, skip it as incidental (do not break)
+        # - If we have already begun collecting comment lines, a blank comment means the comment block ends
         if [ -z "$comment" ]; then
-          break
+          if [ "$first_comment_seen" -eq 1 ]; then
+            break
+          else
+            # incidental blank comment above header — skip it
+            continue
+          fi
         fi
 
         if [ "$first_comment_seen" -eq 0 ]; then
@@ -144,7 +151,7 @@ TABLE_EOF
           lc_comment="$(printf '%s' "$comment" | tr '[:upper:]' '[:lower:]')"
           lc_name="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
           if [ "$lc_comment" = "$lc_name" ]; then
-            # skip first comment line equal to filename
+            # skip this first comment line equal to filename; start including subsequent comment lines
             include_from_here=1
             desc=""
             continue
@@ -164,11 +171,10 @@ TABLE_EOF
       else
         # non-comment line
         if [ "$first_comment_seen" -eq 1 ]; then
-          # end of comment block
+          # we've already collected a comment block; stop
           break
         else
-          # no comment block; collect inference lines (up to 3), then stop once we have them
-          # ignore blank lines
+          # no comment block; gather inference lines (up to 3)
           if [ -n "$tline" ]; then
             infer_lines+=("$tline")
             if [ "${#infer_lines[@]}" -ge 3 ]; then
@@ -181,10 +187,8 @@ TABLE_EOF
 
     if [ -z "$desc" ] && [ "${#infer_lines[@]}" -gt 0 ]; then
       # create an inferred description from the first non-comment lines
-      # join infer_lines with " ; " up to ~200 chars
       local joined
       joined="$(printf '%s ; ' "${infer_lines[@]}" | sed 's/ ; $//')"
-      # trim to 220 chars if needed
       if [ "${#joined}" -gt 220 ]; then
         joined="${joined:0:217}..."
       fi
@@ -204,8 +208,15 @@ TABLE_EOF
   local START_MARKER="<!-- SCRIPTS_TABLE_START -->"
   local END_MARKER="<!-- SCRIPTS_TABLE_END -->"
 
+  # Remove legacy 4-column table block if present between BEGIN/END markers
+  if grep -qF '<!-- BEGIN SCRIPTS -->' "$README" && grep -qF '<!-- END SCRIPTS -->' "$README"; then
+    # delete the entire legacy block
+    sed -i '/<!-- BEGIN SCRIPTS -->/,/<!-- END SCRIPTS -->/d' "$README"
+    log_message "INFO" "Removed legacy BEGIN/END SCRIPTS block from README."
+  fi
+
   if grep -qF "$START_MARKER" "$README"; then
-    # Replace content between markers with our table, and drop a stray plain header immediately preceding the START_MARKER if present
+    # Replace content between markers with our table
     local NEWREADME
     NEWREADME=$(mktemp) || { rm -f "$TMP"; return 1; }
 
@@ -216,16 +227,11 @@ TABLE_EOF
       END {
         for (i = 1; i <= NR; i++) {
           if (index(lines[i], start)) {
-            # If previous line looks like an old header (contains "File" and "Description" or "Raw link" etc), skip it
-            if (i > 1 && lines[i-1] ~ /(Raw link|File[[:space:]]*Type|\|[[:space:]]*File|File[[:space:]]Description)/) {
-              for (j=1; j<=i-2; j++) print lines[j]
-            } else {
-              for (j=1; j<=i-1; j++) print lines[j]
-            }
-            print lines[i]
+            # print up to the start marker line
+            for (j=1;j<=i;j++) print lines[j]
             # print table from tmp file
             while ((getline t < tblfile) > 0) print t
-            # print until end marker is found and then continue after it
+            # skip forward to end marker, print it and the rest
             k = i+1
             while (k <= NR && index(lines[k], end) == 0) k++
             if (k <= NR) {
@@ -235,7 +241,7 @@ TABLE_EOF
             exit
           }
         }
-        # start marker not found: print whole file, then append table
+        # start marker not found in the loop above — fallback to printing all
         for (i=1;i<=NR;i++) print lines[i]
       }' "$README" > "$NEWREADME"
 
@@ -270,7 +276,7 @@ TABLE_EOF
   fi
 }
 
-# --- Conflict handling helper (unchanged) ---
+# === Conflict handling helper (unchanged) ===
 handle_rebase_conflict() {
   local branch="$1"
   echo

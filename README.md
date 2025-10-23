@@ -27,11 +27,6 @@ chmod +x init && ./init
 
 ## Scripts & files
 This table lists top-level files in the repository. Descriptions are taken from the first commented line of each file when present. To regenerate this table automatically, run the provided update-readme.sh generator which extracts first-line headers from scripts.
-<!-- BEGIN SCRIPTS -->
-| File | Type | Description (first comment line if present) | Raw link |
-|---|---:|---|---|
-<!-- END SCRIPTS -->
-
 <!-- SCRIPTS_TABLE_START -->
 | File | Description |
 |---|---|
