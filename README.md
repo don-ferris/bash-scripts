@@ -1,5 +1,5 @@
 # bash-scripts
-This is just a collection of bash scripts that I wrote mostly just to make my life easier.
+This is a collection of bash scripts that I wrote just to make my life easier and to make any (Debian-based) client or server machine work the way I like.
 
 ***Fix "No valid subscxription error for Proxmox:***
 
