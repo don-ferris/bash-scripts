@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 #
 # gitsync
-# Automate Git add/commit/pull(rebase)/push workflows across multiple GitHub accounts.
-# - Automatically stages new files by default (git add --all).
-# - Commits staged changes when present (prompts for commit message).
-# - Pulls with --rebase and handles conflicts interactively if they occur.
-# - When a commit is created during sync, regenerates README table and commits+pushes it.
-# - README table: single header row, File links to blob on current branch, Description
-#   concatenates comment block lines while skipping a leading comment that equals the filename.
+# Automate add/commit/pull(rebase)/push across GitHub accounts; auto-stage new files, rebase remote changes, handle conflicts, and auto-update the README table after commits.
+
 #
 set -euo pipefail
 

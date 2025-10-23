@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
 # init
-# Initialize this repo after cloning:
-# - rename directory "bash-scripts" -> "scripts" (if applicable)
-# - ensure $HOME/scripts exists and is added to PATH via ~/.bashrc (appended)
-# - copy .aliases to $HOME/.aliases
-# - append lines to ~/.bashrc to source ~/.aliases and add $HOME/scripts to PATH (if not already present)
-# - source ~/.bashrc in the current shell and show loaded aliases
-# - prompt (read -n 1) to run fixnano (enables nano mouse support and common key bindings)
+# Post-clone setup: create/rename scripts dir, install .aliases, and update ~/.bashrc (optionally runs fixnano).
+
 set -euo pipefail
 
 info() { printf "\033[1;34m==> %s\033[0m\n" "$*"; }

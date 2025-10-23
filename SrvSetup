@@ -1,8 +1,7 @@
 #!/bin/bash
 # SrvSetup
-# This script installs Git, configures SSH keys, pulls my bash-scripts repo,
-# ensures .bashrc sources .aliases, optionally runs fixnano.sh, 
-# Sets hostname, optionally sets static IP, and optionally installs Docker.
+#
+# Install Git and SSH keys, clone this repo, ensure .bashrc sources .aliases, optionally run fixnano, set hostname/IP, and optionally install Docker.
 
 set -euo pipefail
 

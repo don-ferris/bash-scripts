@@ -1,6 +1,5 @@
 # Aliases
-# A collection of keyboard shortcuts to make the bash shell more intuitive and allow for faster command execution.
-# alias alias_name="command_to_run"
+# A collection of convenient, time saving aliases (keyboard shortcuts for commonly used BASH commands.
 
 
 #	. (DOT) - ls current directory
