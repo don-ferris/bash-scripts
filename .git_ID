@@ -1,1 +1,2 @@
+# .git_ID - used by gitsync script to identify the remote repo (allowing for different directory names locally) and the GitHub account that the repo is associated with (allowing for multiple GitHub accounts).
 bash-scripts | df
