@@ -4,7 +4,7 @@
 ![Bash](https://img.shields.io/badge/language-Bash-yellow)
 ![Debian-friendly](https://img.shields.io/badge/os-Debian%20based-lightgrey)
 
-A collection of bash scripts and related files I wrote to make life easier and to make any (Debian-based) client or server machine behave the way I like. Below is a full, eye‑friendly index of every script/config in the repository. Short descriptions are populated from each script's header (the first commented line) when available.
+A collection of bash scripts and related files I wrote to make my life easier and to make any (Debian-based) client or server machine behave the way I like. Below is a full, eye‑friendly index of every script/config in the repository. Short descriptions are populated from each script's header (the first commented line) when available.
 
 ---
 
