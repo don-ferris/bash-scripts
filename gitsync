@@ -346,7 +346,11 @@ handle_rebase_conflict() {
 }
 
 # --- Main sync flow ---
+# Accept an optional commit message via runtime flag -m "message"
 sync_repo() {
+  # Optional first parameter: explicit commit message passed via -m/--message
+  local passed_msg="${1:-}"
+
   check_git_repo
 
   if [ ! -f "$GIT_ID_FILE" ]; then
@@ -412,52 +416,60 @@ sync_repo() {
   if ! git diff --cached --quiet; then
     log_message "INFO" "Staged changes detected."
 
-    # If .git/next.commit exists use it as default commit message
+    # If .git/next.commit exists use it as default commit message (only used when prompting)
     local next_commit_file=".git/next.commit"
     local default_msg=""
-
     if [ -f "$next_commit_file" ]; then
       default_msg="$(cat "$next_commit_file")"
     fi
 
-    # NEW: Clear the screen and display the contents (or not-found) before prompting
-    if command -v clear >/dev/null 2>&1; then
-      clear
-    fi
-    echo "Contents of the next-commit log:"
-    if [ -n "$default_msg" ]; then
-      printf '%s\n' "$default_msg"
-    else
-      echo "[file not found]"
-    fi
-    echo
-    echo "If you'd like to use this as your commit message, just press the [Enter] key."
-    echo
+    local commit_message=""
 
-    if [ -n "$default_msg" ]; then
-      if copy_to_clipboard "$default_msg"; then
-        echo "(Default commit message copied to clipboard)"
+    if [ -n "$passed_msg" ]; then
+      # User supplied -m at runtime: use it directly (do not prompt).
+      commit_message="$passed_msg"
+      # Treat this as an explicit override: mark next.commit for deletion after successful push
+      delete_next_after_push=true
+      echo "Using commit message provided on command-line (-m)."
+    else
+      # NEW: Clear the screen and display the contents (or not-found) before prompting
+      if command -v clear >/dev/null 2>&1; then
+        clear
+      fi
+      echo "Contents of the next-commit log:"
+      if [ -n "$default_msg" ]; then
+        printf '%s\n' "$default_msg"
+      else
+        echo "[file not found]"
       fi
       echo
-    fi
+      echo "If you'd like to use this as your commit message, just press the [Enter] key."
+      echo
 
-    local commit_message
-    if [ -n "$default_msg" ]; then
-      read -r -p "Enter commit message (press ENTER to accept default shown above): " commit_message
-      # If user accepts (empty), use default; if user enters a different message, use that.
-      if [ -z "$commit_message" ]; then
-        commit_message="$default_msg"
-        # user accepted default -> mark next.commit for deletion after successful push
-        delete_next_after_push=true
-      else
-        # user supplied a different message -> user requested deletion (per your instruction).
-        delete_next_after_push=true
+      if [ -n "$default_msg" ]; then
+        if copy_to_clipboard "$default_msg"; then
+          echo "(Default commit message copied to clipboard)"
+        fi
+        echo
       fi
-    else
-      read -r -p "Enter commit message: " commit_message
-      if [ -z "$commit_message" ]; then
-        log_message "ERROR" "Commit message cannot be empty. Aborting."
-        exit 1
+
+      if [ -n "$default_msg" ]; then
+        read -r -p "Enter commit message (press ENTER to accept default shown above): " commit_message
+        # If user accepts (empty), use default; if user enters a different message, use that.
+        if [ -z "$commit_message" ]; then
+          commit_message="$default_msg"
+          # user accepted default -> mark next.commit for deletion after successful push
+          delete_next_after_push=true
+        else
+          # user supplied a different message -> mark next.commit for deletion after successful push
+          delete_next_after_push=true
+        fi
+      else
+        read -r -p "Enter commit message: " commit_message
+        if [ -z "$commit_message" ]; then
+          log_message "ERROR" "Commit message cannot be empty. Aborting."
+          exit 1
+        fi
       fi
     fi
 
@@ -520,8 +532,11 @@ initialize_repos() {
 
 show_usage() {
   cat <<'USAGE'
-Usage: gitsync [COMMAND]
+Usage: gitsync [OPTIONS] [COMMAND]
 
+Options:
+  -m "message"         Provide a commit message at runtime (non-interactive). If supplied, gitsync will use this message and will not prompt.
+                       If you supply -m, gitsync treats it as an explicit commit message and will mark .git/next.commit for deletion after a successful push.
 Commands:
   (no command)        Syncs current repository (auto-add, commit, pull --rebase, push).
   --id                Interactive repo initialization (create .git_ID files).
@@ -531,11 +546,45 @@ USAGE
 }
 
 main() {
+  # Parse -m/--message anywhere on the command line and collect remaining args as command
+  local COMMIT_MSG_ARG=""
+  local -a rest_args=()
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -m|--message)
+        shift
+        if [ $# -eq 0 ]; then
+          log_message "ERROR" "Missing argument for -m/--message."
+          exit 1
+        fi
+        COMMIT_MSG_ARG="$1"
+        shift
+        ;;
+      --id|--update-readme|--help)
+        rest_args+=("$1")
+        shift
+        ;;
+      -*)
+        # Unknown short/long option
+        rest_args+=("$1")
+        shift
+        ;;
+      *)
+        rest_args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  # Restore positional params to the (possibly reduced) rest_args
+  set -- "${rest_args[@]:-}"
+
   case "${1:-}" in
     --id) initialize_repos ;;
     --update-readme) update_readme ;;
     --help) show_usage ;;
-    "") sync_repo ;;
+    "") sync_repo "$COMMIT_MSG_ARG" ;;
     *) log_message "ERROR" "Unknown command: $1"; show_usage; exit 1 ;;
   esac
 }
