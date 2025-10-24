@@ -7,7 +7,7 @@
 # ──────────────────────────────────────────────────────
 # Revision History
 # ----------------
-# v2.6 — 2025-10-24 — [NEW FEATURE] add -m "commit message" runtime option; show .git/next.commit contents (for use as commit message) before prompting; delete .git/next.commit after successful push when accepted or overridden. https://github.com/copilot/c/c5274c01-1515-4dbc-84e8-986126d37384
+# v2.6 — 2025-10-24 — [NEW FEATURE] add -m "commit message" runtime option;  https://github.com/copilot/c/c5274c01-1515-4dbc-84e8-986126d37384
 # v2.5 — 2025-10-24 — [REFINEMENT] Only delete .git/next.commit after the main push succeeds; if you override the suggested message, mark next.commit for deletion after successful push.
 # v2.4 — 2025-10-23 — [NEW FEATURE] Add .git/next.commit integration: gitsync automatically writes commit message (with revision number, date, changes in the revision, and the Copilot converstaion permalink) to .git/commit.next - the contents of which are displayed (as the default commit message - just hit Enter - when gitsync prompts for a commit message. A future script will allow for appending quick, simple commit messages to next.commit so that changes to multiple files will be properly documented.
 # v2.3 — 2025-10-23 — [REFINEMENT] Rewrite update_readme: single two-column table (File | Description), File column links to repo blob on current branch, escape pipes
