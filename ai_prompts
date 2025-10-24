@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# ai_prompts.sh - A menu for displaying oft-used prompts (some of them quite lengthy) to give to Copilot
+# ──────────────────────────────────────────────────────
+# Author: Don Ferris
+# Created: [24-10-2025]
+# Current Revision: v1.0
+# ──────────────────────────────────────────────────────
+# Revision History
+# ----------------
+# v1.0 — 2025-10-23 — 
+
+########
+
