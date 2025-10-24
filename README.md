@@ -31,6 +31,8 @@ This table lists top-level files in the repository. Descriptions are taken from 
 | File | Description |
 |---|---|
 | [`.aliases`](https://github.com/don-ferris/bash-scripts/blob/main/.aliases) | A collection of convenient, time saving keyboard shortcuts for commonly used BASH commands. |
+| [`bwpwd`](https://github.com/don-ferris/bash-scripts/blob/main/bwpwd) | programatically fetch passwords, secure notes, ssh keys from Bitwarden vault. Can be called from other scripts - see call_bwpwd for usage |
+| [`call_bwpwd`](https://github.com/don-ferris/bash-scripts/blob/main/call_bwpwd) | Companion script for bwpwd to demonstrate how to call it from other scripts. |
 | [`etc-nanorc`](https://github.com/don-ferris/bash-scripts/blob/main/etc-nanorc) | nanorc - nano (text editor) configuration file - modified nanorc file - preconfigured for mouse support and common key bindings |
 | [`fixnano.sh`](https://github.com/don-ferris/bash-scripts/blob/main/fixnano.sh) | installs a modified /etc/nanorc to enable mouse support and common keybindings in nano. |
 | [`gitsync`](https://github.com/don-ferris/bash-scripts/blob/main/gitsync) | Automate add/commit/pull(rebase)/push across GitHub accounts; auto-stage new files, rebase remote changes, handle conflicts, and auto-update the README table for repo after commits. |
