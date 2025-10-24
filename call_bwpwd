@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# call_bwpwd - Companion script for bwpwd to demonstrate how to call it from other scripts.
+# ──────────────────────────────────────────────────────
+# Author: Don Ferris
+# Created: [22-10-2025]
+# Current Revision: v1.0
+# ──────────────────────────────────────────────────────
+# Revision History
+# ----------------
+# v1.0 — 2025-10-23 — Initial Script
+
+# --- Configuration ---
+BWPASS_SCRIPT="$HOME/scripts/bwpwd"
+# IMPORTANT: Use an item name that retrieves a single, exact result for non-interactive testing.
+ITEM_NAME="AAA-123" # <-- CHANGE THIS to an exact item name in your vault
+
+# --- Main Test ---
+
+# Send all wrapper script status messages to STDERR
+echo "--- Starting bwpass test script ---" >&2
+echo "Attempting to retrieve password for item: '$ITEM_NAME'" >&2
+
+# 1. Execute the bwpass script.
+# CRITICAL: We redirect bwpass's STDERR to our STDERR (using file descriptor 3)
+# while the variable ONLY captures STDOUT (the clean password).
+exec 3>&2 # Save current STDERR (file descriptor 2) to file descriptor 3
+VAULT_PASSWORD=$( "$BWPASS_SCRIPT" "$ITEM_NAME" 2>&3 )
+exec 3>&- # Close file descriptor 3
+RETURN_CODE=$?
+
+# 2. Check the exit code.
+if [ $RETURN_CODE -eq 0 ]; then
+    echo "" >&2 # Add a blank line for visual separation
+    echo "--- Retrieval Successful ---" >&2
+    
+    # 3. Use the password (e.g., echo it, or pass it to sshpass)
+    echo "The full content of the '$ITEM_NAME' password has been captured." >&2
+    echo "The retrieved password is:" >&2
+    echo "------------------------------------------------------------" >&2
+    
+    # Echo the variable, using double-quotes to preserve any multi-line content
+    # (though passwords are typically single-line, this is best practice).
+    echo "$VAULT_PASSWORD"
+    
+    echo "------------------------------------------------------------" >&2
+    echo "" # Optional: Blank line before the terminal prompt
+else
+    echo "--- Retrieval FAILED (Exit Code $RETURN_CODE) ---" >&2
+    echo "The status messages above indicate the cause." >&2
+    exit 1
+fi
