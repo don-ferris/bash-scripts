@@ -3,11 +3,12 @@
 # ──────────────────────────────────────────────────────
 # Author: Don Ferris
 # Created: [22-10-2025]
-# Current Revision: v1.0
+# Current Revision: v1.1
 # ──────────────────────────────────────────────────────
 # Revision History
 # ----------------
-# v1.0 — 2025-10-22 — Initial script. Tested, working, supports MFA. (Only tested with TOTP 2FA using Authy code generator.)
+# v1.1 — 2025-10-22 — Added ability to call script, passing "-n [vault item name]" at the command line. Vault item name doesn't have to be precise; script will prompt, offering multiple choice menu if multiple matching items are found.
+# v1.0 — 2025-10-21 — Initial script. Tested, working, supports MFA. (Only tested with TOTP 2FA using Authy code generator.)
 
 ########
 
