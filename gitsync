@@ -1,9 +1,26 @@
 #!/usr/bin/env bash
-#
-# gitsync
-# Automate add/commit/pull(rebase)/push across GitHub accounts; auto-stage new files, rebase remote changes, handle conflicts, and auto-update the README table after commits.
+# gitsync - Automate add/commit/pull(rebase)/push across GitHub accounts; auto-stage new files, rebase remote changes, handle conflicts, and auto-update the README table for repo after commits.
+# ──────────────────────────────────────────────────────
+# Author: Don Ferris
+# Created: [15-10-2025]
+# Current Revision: v2.4
+# ──────────────────────────────────────────────────────
+# Revision History
+# ----------------
+# v2.4 — 2025-10-24 — Standardize single-line top description format: gitsync strips "# [filename] - " and uses the remainder as the Description (for scripts, skips the shebang and uses the second line). Also preserve .git/next.commit until after a successful push; delete it when consumed or overridden after push success.
+# v2.3 — 2025-10-24 — Only delete .git/next.commit after the main push succeeds; if you override the suggested message, mark next.commit for deletion after successful push.
+# v2.2 — 2025-10-23 — Add .git/next.commit integration: display/copy suggested commit message to clipboard and offer it as the default commit message.
+# v2.1 — 2025-10-23 — Standardized header parsing: recognize the boxed header/divider/metadata format and extract the multi-line Description block robustly (skip shebangs, decorative lines, and metadata).
+# v2.0 — 2025-10-23 — Rewrite update_readme: single two-column table (File | Description), File column links to repo blob on current branch, escape pipes, remove legacy 4-column block if present, and read/write via temp file for safety.
+# v1.9 — 2025-10-23 — update_readme now commits and pushes README automatically when it changes.
+# v1.8 — 2025-10-23 — Run update_readme only when a commit was created during the sync run (avoid unnecessary README churn).
+# v1.7 — 2025-10-22 — Interactive conflict handling added: on rebase failure present A/B/C options (auto-recover, manual shell, abort) with automatic stash/reapply attempt.
+# v1.6 — 2025-10-22 — Preflight and auto-track behavior: automatically stage new files by default (git add --all); earlier interactive preflight replaced by automatic staging unless conflict occurs.
+# v1.5 — 2025-10-21 — Multi-account support and .git_ID parsing hardened: allow leading comment lines in .git_ID and use first non-comment mapping line; per-account SSH key selection and origin URL enforcement.
+# v1.0 — 2025-10-20 — Initial core: stage all changes, prompt for commit message, pull --rebase origin/current-branch, push, and optionally stash/pop untracked files to avoid interference.
 
-#
+########
+
 set -euo pipefail
 
 # Configuration
@@ -24,7 +41,6 @@ log_message() {
   printf '%s\n' "$entry"
 }
 
-# Basic repo check
 check_git_repo() {
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     log_message "ERROR" "This is not a Git repository. Aborting."
@@ -32,7 +48,6 @@ check_git_repo() {
   fi
 }
 
-# Account mapping
 get_account_details() {
   local abbrev="$1"
   case "$abbrev" in
@@ -65,7 +80,23 @@ get_account_details() {
   log_message "INFO" "Configuring for account: $GIT_USER_NAME"
 }
 
-# === README update helper (fixed) ===
+# Try to copy text to clipboard if supported
+copy_to_clipboard() {
+  local text="$1"
+  if command -v xclip >/dev/null 2>&1; then
+    printf '%s' "$text" | xclip -selection clipboard
+    return 0
+  elif command -v xsel >/dev/null 2>&1; then
+    printf '%s' "$text" | xsel --clipboard --input
+    return 0
+  elif command -v pbcopy >/dev/null 2>&1; then
+    printf '%s' "$text" | pbcopy
+    return 0
+  fi
+  return 1
+}
+
+# === README update helper (standardized header-aware) ===
 update_readme() {
   check_git_repo
 
@@ -79,13 +110,11 @@ update_readme() {
 
   log_message "INFO" "Building scripts table from top-level files (File -> Description)..."
 
-  # Single header row only
   cat > "$TMP" <<'TABLE_EOF'
 | File | Description |
 |---|---|
 TABLE_EOF
 
-  # Gather top-level files (tracked + untracked at repo root)
   mapfile -t files < <(
     {
       git ls-files --full-name | awk -F/ 'NF==1'
@@ -94,107 +123,98 @@ TABLE_EOF
   )
 
   for name in "${files[@]}"; do
-    # Skip README and common git metadata and directories
     case "$name" in
       README.md|.git*|.github|.gitignore) continue ;;
     esac
     [ -f "$name" ] || continue
 
-    # Build GitHub blob URL pointing at current branch
     local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/blob/${BRANCH}/${name}"
     local file_link="[\`${name}\`](${url})"
 
-    # Extract description:
-    # 1) Try to collect a top comment block (skip shebangs). If the first comment equals the filename, skip it.
-    # 2) If no comment header, infer from first few non-comment lines (up to 3), then append " (no header; inferred)"
+    # Collect top-of-file comments (robust to incidental blank comment lines)
     local desc=""
-    local first_comment_seen=0
-    local include_from_here=0
-    local -a infer_lines=()
-
+    local -a comments=()
+    local saw_comments=0
     while IFS= read -r line; do
-      # trim leading spaces
       local tline
       tline="$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//')"
-
-      # skip shebangs entirely
       if [[ "$tline" =~ ^#! ]]; then
         continue
       fi
-
       if [[ "$tline" =~ ^# ]]; then
-        # comment line
+        saw_comments=1
         local comment
         comment="$(printf '%s' "$tline" | sed -e 's/^#\+//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
-
-        # If this is an empty comment (a line that is just "#" or "#   "), treat differently:
-        # - If we haven't seen any comment yet, skip it as incidental (do not break)
-        # - If we have already begun collecting comment lines, a blank comment means the comment block ends
-        if [ -z "$comment" ]; then
-          if [ "$first_comment_seen" -eq 1 ]; then
-            break
-          else
-            # incidental blank comment above header — skip it
-            continue
-          fi
-        fi
-
-        if [ "$first_comment_seen" -eq 0 ]; then
-          first_comment_seen=1
-          # compare lowercase to filename
-          local lc_comment lc_name
-          lc_comment="$(printf '%s' "$comment" | tr '[:upper:]' '[:lower:]')"
-          lc_name="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
-          if [ "$lc_comment" = "$lc_name" ]; then
-            # skip this first comment line equal to filename; start including subsequent comment lines
-            include_from_here=1
-            desc=""
-            continue
-          else
-            include_from_here=1
-            desc="$comment"
-            continue
-          fi
-        else
-          if [ "$include_from_here" -eq 1 ]; then
-            desc="${desc:+$desc }${comment}"
-            continue
-          else
-            break
-          fi
-        fi
+        comments+=("$comment")
+        continue
       else
-        # non-comment line
-        if [ "$first_comment_seen" -eq 1 ]; then
-          # we've already collected a comment block; stop
+        if [ "$saw_comments" -eq 1 ]; then
           break
         else
-          # no comment block; gather inference lines (up to 3)
-          if [ -n "$tline" ]; then
-            infer_lines+=("$tline")
-            if [ "${#infer_lines[@]}" -ge 3 ]; then
-              break
-            fi
-          fi
+          break
         fi
       fi
     done < "$name"
 
-    if [ -z "$desc" ] && [ "${#infer_lines[@]}" -gt 0 ]; then
-      # create an inferred description from the first non-comment lines
-      local joined
-      joined="$(printf '%s ; ' "${infer_lines[@]}" | sed 's/ ; $//')"
-      if [ "${#joined}" -gt 220 ]; then
-        joined="${joined:0:217}..."
+    if [ "${#comments[@]}" -gt 0 ]; then
+      # Remove leading incidental blank comment lines
+      while [ "${#comments[@]}" -gt 0 ] && [ -z "${comments[0]}" ]; do
+        comments=("${comments[@]:1}")
+      done
+
+      # New rule: if first comment matches the single-line pattern "[filename] - Description", use that.
+      # Match: starts with filename (case-insensitive) followed by " - " then the description
+      local first_comment="${comments[0]:-}"
+      if [ -n "$first_comment" ]; then
+        local lc_first_comment lc_name
+        lc_first_comment="$(printf '%s' "$first_comment" | tr '[:upper:]' '[:lower:]')"
+        lc_name="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+        if printf '%s' "$first_comment" | grep -q -E "^[[:space:]]*${name}[[:space:]]*-[[:space:]]+" 2>/dev/null || \
+           printf '%s' "$lc_first_comment" | grep -q -E "^[[:space:]]*${lc_name}[[:space:]]*-[[:space:]]+" 2>/dev/null; then
+          # extract everything after the first " - "
+          desc="$(printf '%s' "$first_comment" | sed -E 's/^[[:space:]]*[^-]+-[[:space:]]*//')"
+        else
+          # Existing behavior: parse multi-line header (skip decorative lines, stop at divider/metadata)
+          local -a out_lines=()
+          local i=0
+          local n=${#comments[@]}
+          # If first non-empty comment equals the filename alone, skip it
+          local firstc="${comments[0]}"
+          local lc_firstc lc_n
+          lc_firstc="$(printf '%s' "$firstc" | tr '[:upper:]' '[:lower:]')"
+          lc_n="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+          if [ "$lc_firstc" = "$lc_n" ]; then
+            i=1
+          fi
+
+          for (( ; i < n; i++ )); do
+            local c="${comments[i]}"
+            if printf '%s' "$c" | grep -q -E '^[[:punct:][:space:]]+$'; then
+              continue
+            fi
+            if printf '%s' "$c" | grep -q -E '^[[:space:]]*[-─=]{5,}[[:space:]]*$'; then
+              break
+            fi
+            if printf '%s' "$c" | grep -q -i -E '^(author:|created:|current revision:|revision history|revision:)$'; then
+              break
+            fi
+            if [ -n "$c" ]; then
+              out_lines+=("$c")
+            fi
+          done
+
+          if [ "${#out_lines[@]}" -gt 0 ]; then
+            desc="$(printf '%s ' "${out_lines[@]}")"
+            desc="$(printf '%s' "$desc" | sed -e 's/[[:space:]]\{2,\}/ /g' -e 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          fi
+        fi
       fi
-      desc="${joined} (no header; inferred)"
     fi
 
     if [ -z "$desc" ]; then
-      desc="(no header; inferred)"
+      desc="(no header)"
     fi
 
-    # Escape pipe characters so the Markdown table stays valid
     desc="${desc//|/\\|}"
 
     printf "| %s | %s |\n" "$file_link" "$desc" >> "$TMP"
@@ -205,13 +225,11 @@ TABLE_EOF
 
   # Remove legacy 4-column table block if present between BEGIN/END markers
   if grep -qF '<!-- BEGIN SCRIPTS -->' "$README" && grep -qF '<!-- END SCRIPTS -->' "$README"; then
-    # delete the entire legacy block
     sed -i '/<!-- BEGIN SCRIPTS -->/,/<!-- END SCRIPTS -->/d' "$README"
     log_message "INFO" "Removed legacy BEGIN/END SCRIPTS block from README."
   fi
 
   if grep -qF "$START_MARKER" "$README"; then
-    # Replace content between markers with our table
     local NEWREADME
     NEWREADME=$(mktemp) || { rm -f "$TMP"; return 1; }
 
@@ -222,11 +240,8 @@ TABLE_EOF
       END {
         for (i = 1; i <= NR; i++) {
           if (index(lines[i], start)) {
-            # print up to the start marker line
             for (j=1;j<=i;j++) print lines[j]
-            # print table from tmp file
             while ((getline t < tblfile) > 0) print t
-            # skip forward to end marker, print it and the rest
             k = i+1
             while (k <= NR && index(lines[k], end) == 0) k++
             if (k <= NR) {
@@ -236,14 +251,12 @@ TABLE_EOF
             exit
           }
         }
-        # start marker not found in the loop above — fallback to printing all
         for (i=1;i<=NR;i++) print lines[i]
       }' "$README" > "$NEWREADME"
 
     mv "$NEWREADME" "$README"
     log_message "INFO" "README updated between markers."
   else
-    # Append markers + table
     {
       echo
       echo "$START_MARKER"
@@ -255,7 +268,6 @@ TABLE_EOF
 
   rm -f "$TMP"
 
-  # Stage, commit and push README if changed
   git add "$README"
   if git diff --staged --quiet; then
     log_message "INFO" "No changes to README to commit."
@@ -266,12 +278,16 @@ TABLE_EOF
     local branch
     branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
     if [ -z "$branch" ]; then branch="main"; fi
-    git push origin "$branch"
-    log_message "INFO" "Pushed README update to origin/$branch"
+    if git push origin "$branch"; then
+      log_message "INFO" "Pushed README update to origin/$branch"
+    else
+      log_message "ERROR" "Failed to push README update to origin/$branch"
+      return 1
+    fi
   fi
 }
 
-# === Conflict handling helper (unchanged) ===
+# conflict handling helper (unchanged)
 handle_rebase_conflict() {
   local branch="$1"
   echo
@@ -329,7 +345,7 @@ handle_rebase_conflict() {
   esac
 }
 
-# --- Main sync flow (unchanged behavior) ---
+# --- Main sync flow ---
 sync_repo() {
   check_git_repo
 
@@ -391,15 +407,46 @@ sync_repo() {
   git add --all
 
   local commit_made=false
+  local delete_next_after_push=false
 
   if ! git diff --cached --quiet; then
     log_message "INFO" "Staged changes detected."
-    local commit_message
-    read -r -p "Enter commit message: " commit_message
-    if [ -z "$commit_message" ]; then
-      log_message "ERROR" "Commit message cannot be empty. Aborting."
-      exit 1
+
+    # If .git/next.commit exists use it as default commit message
+    local next_commit_file=".git/next.commit"
+    local default_msg=""
+    if [ -f "$next_commit_file" ]; then
+      default_msg="$(cat "$next_commit_file")"
+      echo "Default commit message found in $next_commit_file:"
+      echo
+      printf '%s\n' "$default_msg"
+      echo
+      if copy_to_clipboard "$default_msg"; then
+        echo "(Default commit message copied to clipboard)"
+      fi
+      echo
     fi
+
+    local commit_message
+    if [ -n "$default_msg" ]; then
+      read -r -p "Enter commit message (press ENTER to accept default shown above): " commit_message
+      # If user accepts (empty), use default; if user enters a different message, use that.
+      if [ -z "$commit_message" ]; then
+        commit_message="$default_msg"
+        # user accepted default -> mark next.commit for deletion after successful push
+        delete_next_after_push=true
+      else
+        # user supplied a different message -> user requested deletion (per your instruction).
+        delete_next_after_push=true
+      fi
+    else
+      read -r -p "Enter commit message: " commit_message
+      if [ -z "$commit_message" ]; then
+        log_message "ERROR" "Commit message cannot be empty. Aborting."
+        exit 1
+      fi
+    fi
+
     git commit -m "$commit_message"
     commit_made=true
   else
@@ -424,8 +471,20 @@ sync_repo() {
     fi
   fi
 
+  # Push local commits (wrap in conditional so we can react to success/failure)
   log_message "INFO" "Pushing changes to origin/$branch..."
-  git push origin "$branch"
+  if git push origin "$branch"; then
+    log_message "INFO" "Pushed commits to origin/$branch"
+    # Only delete .git/next.commit if requested and the push succeeded
+    if [ "$delete_next_after_push" = true ] && [ -f ".git/next.commit" ]; then
+      rm -f ".git/next.commit"
+      log_message "INFO" "Deleted .git/next.commit after successful push."
+    fi
+  else
+    log_message "ERROR" "Failed to push commits to origin/$branch"
+    log_message "INFO" "Leaving .git/next.commit intact (if present) so you can retry or inspect it."
+    exit 1
+  fi
 
   if [ "$commit_made" = true ]; then
     log_message "INFO" "Local commit created; regenerating README table..."
@@ -439,7 +498,7 @@ sync_repo() {
   log_message "SUCCESS" "Sync complete for $GIT_USER_NAME/$remote_repo_name on branch $branch"
 }
 
-# Placeholder: initialization function if you use it
+# Placeholder initialization function
 initialize_repos() {
   log_message "INFO" "initialize_repos called (placeholder)"
   :

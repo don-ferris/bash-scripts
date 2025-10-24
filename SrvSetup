@@ -1,7 +1,12 @@
 #!/bin/bash
-# SrvSetup
-#
-# Install Git and SSH keys, clone this repo, ensure .bashrc sources .aliases, optionally run fixnano, set hostname/IP, and optionally install Docker.
+# SrvSetup - Install Git and SSH keys, clone this repo, ensure .bashrc sources .aliases, optionally run fixnano, set hostname/IP, and optionally install Docker.
+# ──────────────────────────────────────────────────────
+# Author: Don Ferris
+# Created: [18-10-2025]
+# Current Revision: v1.1
+# ──────────────────────────────────────────────────────
+
+########
 
 set -euo pipefail
 

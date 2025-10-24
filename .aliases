@@ -1,5 +1,4 @@
-# Aliases
-# A collection of convenient, time saving aliases (keyboard shortcuts for commonly used BASH commands.
+# .aliases - A collection of convenient, time saving keyboard shortcuts for commonly used BASH commands.
 
 
 #	. (DOT) - ls current directory

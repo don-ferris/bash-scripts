@@ -1,5 +1,5 @@
-## etc-nanorc
-## modified nanorc file - configures the nano text editor for mouse support and common key bindings
+# etc-nanorc - nano (text editor) configuration file - modified nanorc file - preconfigured for mouse support and common key bindings
+
 ##
 ##  GNU nano 7.2
 ## Sample initialization file for GNU nano.

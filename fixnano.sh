@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
-# fixnano
-#
-# installs a modified /etc/nanorc to enable mouse support and common keybindings in nano.
+# fixnano.sh - installs a modified /etc/nanorc to enable mouse support and common keybindings in nano.
+# ──────────────────────────────────────────────────────
+# Author: Don Ferris
+# Created: [22-06-2020]
+# Current Revision: v2.0
+# ──────────────────────────────────────────────────────
+# Revision History
+# ----------------
+# v2.0 — 2025-10-23 — Modified to install etc-nanorc from local (cloned Github) bash-scripts repo, download if not found locally
+# v1.1 — 2020-09-04 — Modified to download etc-nanorc from GitHub repo then install
+# v1.0 — 2020-06-23 — Initial version
+
+########
+
 set -euo pipefail
 
 REMOTE_URL="https://raw.githubusercontent.com/don-ferris/bash-scripts/main/etc-nanorc"
