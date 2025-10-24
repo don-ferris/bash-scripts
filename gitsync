@@ -3,21 +3,21 @@
 # ──────────────────────────────────────────────────────
 # Author: Don Ferris
 # Created: [15-10-2025]
-# Current Revision: v2.4
+# Current Revision: v2.6
 # ──────────────────────────────────────────────────────
 # Revision History
 # ----------------
-# v2.4 — 2025-10-24 — Standardize single-line top description format: gitsync strips "# [filename] - " and uses the remainder as the Description (for scripts, skips the shebang and uses the second[...]
-# v2.3 — 2025-10-24 — Only delete .git/next.commit after the main push succeeds; if you override the suggested message, mark next.commit for deletion after successful push.
-# v2.2 — 2025-10-23 — Add .git/next.commit integration: display/copy suggested commit message to clipboard and offer it as the default commit message.
-# v2.1 — 2025-10-23 — Standardized header parsing: recognize the boxed header/divider/metadata format and extract the multi-line Description block robustly (skip shebangs, decorative lines, and me[...]
-# v2.0 — 2025-10-23 — Rewrite update_readme: single two-column table (File | Description), File column links to repo blob on current branch, escape pipes, remove legacy 4-column block if present, [...]
-# v1.9 — 2025-10-23 — update_readme now commits and pushes README automatically when it changes.
-# v1.8 — 2025-10-23 — Run update_readme only when a commit was created during the sync run (avoid unnecessary README churn).
-# v1.7 — 2025-10-22 — Interactive conflict handling added: on rebase failure present A/B/C options (auto-recover, manual shell, abort) with automatic stash/reapply attempt.
-# v1.6 — 2025-10-22 — Preflight and auto-track behavior: automatically stage new files by default (git add --all); earlier interactive preflight replaced by automatic staging unless conflict occur[...]
-# v1.5 — 2025-10-21 — Multi-account support and .git_ID parsing hardened: allow leading comment lines in .git_ID and use first non-comment mapping line; per-account SSH key selection and origin UR[...]
-# v1.0 — 2025-10-20 — Initial core: stage all changes, prompt for commit message, pull --rebase origin/current-branch, push, and optionally stash/pop untracked files to avoid interference.
+# v2.6 — 2025-10-24 — [NEW FEATURE] add -m "commit message" runtime option; show .git/next.commit contents (for use as commit message) before prompting; delete .git/next.commit after successful push when accepted or overridden. https://github.com/copilot/c/c5274c01-1515-4dbc-84e8-986126d37384
+# v2.5 — 2025-10-24 — [REFINEMENT] Only delete .git/next.commit after the main push succeeds; if you override the suggested message, mark next.commit for deletion after successful push.
+# v2.4 — 2025-10-23 — [NEW FEATURE] Add .git/next.commit integration: gitsync automatically writes commit message (with revision number, date, changes in the revision, and the Copilot converstaion permalink) to .git/commit.next - the contents of which are displayed (as the default commit message - just hit Enter - when gitsync prompts for a commit message. A future script will allow for appending quick, simple commit messages to next.commit so that changes to multiple files will be properly documented.
+# v2.3 — 2025-10-23 — [REFINEMENT] Rewrite update_readme: single two-column table (File | Description), File column links to repo blob on current branch, escape pipes
+# v2.2 — 2025-10-23 — [REFINEMENT] update_readme now commits and pushes README automatically when it changes.
+# v2.1 — 2025-10-23 — [MINOR REFINEMENT] update_readme only runs when a commit was created during the sync run (to avoid unnecessary README churn).
+# v2.0 — 2025-10-23 —  [NEW FEATURE] Automatic documentation of new scripts! update_readme() function automatically updates the Scripts and Files table in the README, using a comment line in the script header as the description.
+# v1.7 — 2025-10-22 — [NEW FEATURE] Interactive conflict handling: on rebase failure present A/B/C options (auto-recover, manual shell, abort) with automatic stash/reapply attempt.
+# v1.6 — 2025-10-22 — [REFINEMENT] Preflight and auto-track behavior: automatically stage new files by default (git add --all); earlier interactive preflight replaced by automatic staging unless conflict occur[...]
+# v1.5 — 2025-10-21 — [MULTIPLE REFINEMENTS] Multi-account support and .git_ID parsing hardened: allow leading comment lines in .git_ID and use first non-comment mapping line; per-account SSH key selection and origin UR[...]
+# v1.0 — 2025-10-20 — [INITIAL CORE] stage all changes, prompt for commit message, pull --rebase origin/current-branch, push, and optionally stash/pop untracked files to avoid interference.
 
 ########
 
@@ -78,22 +78,6 @@ get_account_details() {
       ;;
   esac
   log_message "INFO" "Configuring for account: $GIT_USER_NAME"
-}
-
-# Try to copy text to clipboard if supported
-copy_to_clipboard() {
-  local text="$1"
-  if command -v xclip >/dev/null 2>&1; then
-    printf '%s' "$text" | xclip -selection clipboard
-    return 0
-  elif command -v xsel >/dev/null 2>&1; then
-    printf '%s' "$text" | xsel --clipboard --input
-    return 0
-  elif command -v pbcopy >/dev/null 2>&1; then
-    printf '%s' "$text" | pbcopy
-    return 0
-  fi
-  return 1
 }
 
 # === README update helper (standardized header-aware) ===
@@ -447,9 +431,6 @@ sync_repo() {
       echo
 
       if [ -n "$default_msg" ]; then
-        if copy_to_clipboard "$default_msg"; then
-          echo "(Default commit message copied to clipboard)"
-        fi
         echo
       fi
 
@@ -536,7 +517,6 @@ Usage: gitsync [OPTIONS] [COMMAND]
 
 Options:
   -m "message"         Provide a commit message at runtime (non-interactive). If supplied, gitsync will use this message and will not prompt.
-                       If you supply -m, gitsync treats it as an explicit commit message and will mark .git/next.commit for deletion after a successful push.
 Commands:
   (no command)        Syncs current repository (auto-add, commit, pull --rebase, push).
   --id                Interactive repo initialization (create .git_ID files).
