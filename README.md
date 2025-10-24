@@ -37,6 +37,6 @@ This table lists top-level files in the repository. Descriptions are taken from 
 | [`fixnano.sh`](https://github.com/don-ferris/bash-scripts/blob/main/fixnano.sh) | installs a modified /etc/nanorc to enable mouse support and common keybindings in nano. |
 | [`gitsync`](https://github.com/don-ferris/bash-scripts/blob/main/gitsync) | Automate add/commit/pull(rebase)/push across GitHub accounts; auto-stage new files, rebase remote changes, handle conflicts, and auto-update the README table for repo after commits. |
 | [`init`](https://github.com/don-ferris/bash-scripts/blob/main/init) | Post-clone setup: create/rename scripts dir, install .aliases, and update ~/.bashrc (optionally runs fixnano). |
-| [`script_template.sh`](https://github.com/don-ferris/bash-scripts/blob/main/script_template.sh) | Script template to insure consistency of script header (so that it's picked up properly by gitsync script for auto-updating the RAEDME for the repo. |
+| [`script_template.sh`](https://github.com/don-ferris/bash-scripts/blob/main/script_template.sh) | Script template to insure consistency of script header (so that it's picked up properly by gitsync script for auto-updating the README for the repo. |
 | [`SrvSetup`](https://github.com/don-ferris/bash-scripts/blob/main/SrvSetup) | Install Git and SSH keys, clone this repo, ensure .bashrc sources .aliases, optionally run fixnano, set hostname/IP, and optionally install Docker. |
 <!-- SCRIPTS_TABLE_END -->
