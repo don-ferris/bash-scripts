@@ -3,17 +3,19 @@
 # ──────────────────────────────────────────────────────
 # Author: Don Ferris
 # Created: [22-10-2025]
-# Current Revision: v1.1
+# Current Revision: v1.3
 # ──────────────────────────────────────────────────────
 # Revision History
 # ----------------
-# v1.1 — 2025-10-22 — Added ability to call script, passing "-n [vault item name]" at the command line. Vault item name doesn't have to be precise; script will prompt, offering multiple choice menu if multiple matching items are found.
+# v1.3 — 2025-10-24 — Removed -n switch; now accept the item name as a positional argument (bwpwd "item name"). Kept robust session-handling for already-logged-in cases and safe token extraction.
+# v1.2 — 2025-10-24 — Removed debug output, clarified -n usage (now supports -n or positional arg), improved session handling for already-logged-in cases.
+# v1.1 — 2025-10-22 — Added ability to call script, passing "-n [vault item name]" at the command line. Vault item name doesn't have to be precise; script will prompt, offering multiple choice menus.
 # v1.0 — 2025-10-21 — Initial script. Tested, working, supports MFA. (Only tested with TOTP 2FA using Authy code generator.)
 
 ########
 
 # --- Configuration ---
-BW_EMAIL="bitwarden@donnybahama.com" 
+BW_EMAIL="bitwarden@donnybahama.com"
 BW_PASSWORD_FILE="$HOME/.bwpwd"
 SESSION_FILE="/tmp/bw_session.key"
 
@@ -31,8 +33,7 @@ if [ ! -f "$BW_PASSWORD_FILE" ]; then
 fi
 
 # Ensure the CLI is configured for the correct server.
-echo "Setting Bitwarden server configuration to: $BW_SERVER_URL" >&2
-bw config server "$BW_SERVER_URL" > /dev/null 2>&1
+bw config server "$BW_SERVER_URL" > /dev/null 2>&1 || true
 
 # Check for 'jq' utility (required for parsing JSON output)
 if ! command -v jq &> /dev/null; then
@@ -41,57 +42,61 @@ if ! command -v jq &> /dev/null; then
 fi
 
 # -----------------------------------------------
+# --- Positional argument handling (no -n switch) ---
+# -----------------------------------------------
+ITEM_NAME=""
+INVOKED_WITH_ARG=0
+if [ -n "$1" ]; then
+    ITEM_NAME="$1"
+    INVOKED_WITH_ARG=1
+fi
+
+# -----------------------------------------------
 # --- Functions (Login/Unlock Logic) ---
 # -----------------------------------------------
 
 perform_login_or_unlock() {
-    local login_status
     local return_code
+    local raw_output
     local SESSION_KEY
-    
-    echo "DEBUG: Checking Bitwarden global status for $BW_EMAIL..." >&2
-    login_status=$(bw status 2>/dev/null | jq -r .logged)
 
-    # --- Case 1: Already Logged In (Only needs unlock) ---
-    if [[ "$login_status" == "true" ]]; then
-        echo "DEBUG: Status is 'logged: true'. Attempting 'bw unlock --raw'..." >&2
-        
-        SESSION_KEY=$(bw unlock --passwordfile "$BW_PASSWORD_FILE" --raw)
-        return_code=$?
-    
-    # --- Case 2: Not Logged In (Needs full login) ---
-    else
-        echo "DEBUG: Status is '$login_status'. Attempting fresh 'bw login'..." >&2
-        
-        # 2FA prompt remains interactive (on STDOUT)
-        echo -n "2FA Required: Enter your 6-digit authenticator code: "
+    # First attempt: try an unlock (works if already logged in)
+    raw_output=$(bw unlock --passwordfile "$BW_PASSWORD_FILE" --raw 2>&1)
+    return_code=$?
+
+    if [ $return_code -ne 0 ]; then
+        # If unlock failed, try a fresh login (interactive TOTP)
+        echo -n "2FA Required: Enter your 6-digit authenticator code: " >&2
         read -r BW_2FA_CODE
-        
-        local FULL_CMD="bw login $BW_EMAIL --passwordfile $BW_PASSWORD_FILE --method totp --code $BW_2FA_CODE --raw"
-        echo "DEBUG: Executing full command: $FULL_CMD" >&2
 
-        SESSION_KEY=$(bw login "$BW_EMAIL" --passwordfile "$BW_PASSWORD_FILE" --method totp --code "$BW_2FA_CODE" --raw)
+        raw_output=$(bw login "$BW_EMAIL" --passwordfile "$BW_PASSWORD_FILE" --method totp --code "$BW_2FA_CODE" --raw 2>&1)
         return_code=$?
+
+        # If login failed but said "already logged in", try unlock again.
+        if [ $return_code -ne 0 ]; then
+            if printf '%s\n' "$raw_output" | grep -qi 'already logged in'; then
+                raw_output=$(bw unlock --passwordfile "$BW_PASSWORD_FILE" --raw 2>&1)
+                return_code=$?
+            fi
+        fi
     fi
 
-    echo "DEBUG: bw command returned exit code $return_code." >&2
-    
-    # Analyze the result
-    if [ $return_code -eq 0 ]; then
-        if [[ "$SESSION_KEY" =~ ^[A-Za-z0-9+/=]{40,}$ ]]; then
-            export BW_SESSION="$SESSION_KEY"
-            echo "Contents of $SESSION_FILE: $SESSION_KEY" >&2
-            echo "$SESSION_KEY" > "$SESSION_FILE"
-            echo "Login/Unlock successful and session key saved." >&2
-            return 0
-        else
-            echo "ERROR: Login succeeded (Exit Code 0), but output does not look like a session key." >&2
-            echo "Raw output was: $SESSION_KEY" >&2
-            return 1
-        fi
+    # Safe extraction of a plausible session token:
+    SESSION_KEY=$(printf '%s\n' "$raw_output" \
+        | tr -cs 'A-Za-z0-9_+/=-' '\n' \
+        | awk 'length($0) >= 32 { print; exit }')
+
+    if [ -n "$SESSION_KEY" ] && [ $return_code -eq 0 ]; then
+        export BW_SESSION="$SESSION_KEY"
+        # Save session to file with restrictive permissions
+        umask 177
+        printf '%s' "$SESSION_KEY" > "$SESSION_FILE"
+        chmod 600 "$SESSION_FILE" 2>/dev/null || true
+        return 0
     else
-        echo "ERROR: Bitwarden command failed with Exit Code $return_code. Raw output was:" >&2
-        echo "$SESSION_KEY" >&2
+        echo "ERROR: Bitwarden command failed to produce a valid session key (exit $return_code)." >&2
+        echo "Raw output was:" >&2
+        echo "$raw_output" >&2
         return 1
     fi
 }
@@ -104,49 +109,37 @@ perform_login_or_unlock() {
 if [ -f "$SESSION_FILE" ]; then
     export BW_SESSION=$(cat "$SESSION_FILE")
 
-    echo "Checking stored session key validity..." >&2
-    if bw unlock --check --session "$BW_SESSION" &> /dev/null; then
-        echo "Existing session key is valid. Proceeding..." >&2
+    # Validate the session by calling a harmless non-interactive command (sync).
+    if bw sync --session "$BW_SESSION" >/dev/null 2>&1; then
+        :
     else
-        echo "Stored session key is invalid or expired. Attempting to log in..." >&2
-        unset BW_SESSION 
+        unset BW_SESSION
         rm -f "$SESSION_FILE"
     fi
 fi
 
 # --- 2. Login if no valid session key was found ---
 if [ -z "$BW_SESSION" ]; then
-    perform_login_or_unlock || exit 1 
+    perform_login_or_unlock || exit 1
 fi
 
-# --- 3. Retrieve PASSWORD (Accepts CLI Argument or Prompt) ---
+# --- 3. Retrieve PASSWORD (Accepts positional arg or prompt) ---
 if [ -n "$BW_SESSION" ]; then
-    echo >&2
-    echo "-------------------------------------" >&2
-    
-    # *** MODIFICATION HERE: Check for CLI argument ($1) ***
-    if [ -n "$1" ]; then
-        ITEM_NAME="$1"
-        echo "Retrieving item name from CLI argument: $ITEM_NAME" >&2
-    else
-        echo -n "Enter the vault item name to retrieve (or search term for a Password): "
+    if [ -z "$ITEM_NAME" ]; then
+        echo -n "Enter the vault item name to retrieve (or search term for a Password): " >&2
         read -r ITEM_NAME
     fi
-    
+
     if [ -z "$ITEM_NAME" ]; then
         echo "ERROR: No item name provided. Exiting." >&2
         exit 1
     fi
 
-    echo "Beginning search for item: $ITEM_NAME" >&2
-
     # Force sync to prevent stale data issues
-    echo "Forcing Bitwarden vault synchronization..." >&2
     if ! bw sync --session "$BW_SESSION" >/dev/null 2>&1; then
         echo "ERROR: Failed to synchronize Bitwarden vault. Cannot retrieve password." >&2
         exit 1
     fi
-    echo "Syncing complete." >&2
 
     # We use bw list items to handle single/multiple results gracefully
     SEARCH_RESULTS_JSON=$(bw list items --search "$ITEM_NAME" --session "$BW_SESSION")
@@ -159,33 +152,28 @@ if [ -n "$BW_SESSION" ]; then
 
     # --- Single Result Path (Prints only content to STDOUT) ---
     if [ "$ITEM_COUNT" -eq 1 ]; then
-        # Use jq to extract the password from the JSON list
         VAULT_PASSWORD=$(echo "$SEARCH_RESULTS_JSON" | jq -r '.[0].login.password')
-        
+
         if [ -n "$VAULT_PASSWORD" ] && [ "$VAULT_PASSWORD" != "null" ]; then
-            # Print ONLY the password to STDOUT for easy capture
             echo "$VAULT_PASSWORD"
         else
             echo "ERROR: Item found but has no stored password (or unexpected format)." >&2
             exit 1
         fi
-    
+
     # --- Multiple Results Path (Interactive/Non-Interactive Failure) ---
     else
-        # If running non-interactively (argument provided), FAIL gracefully.
-        if [ -n "$1" ]; then
+        if [ $INVOKED_WITH_ARG -eq 1 ]; then
+            # If positional arg was provided non-interactively, we can't select
             echo "ERROR: Multiple items found for '$ITEM_NAME'. Cannot select non-interactively. Please use a more specific search term." >&2
-            # List found items to STDERR for manual debugging
             echo "Found items:" >&2
             echo "$SEARCH_RESULTS_JSON" | jq -r '.[] | .name' >&2
             exit 1
         fi
-        
-        # --- Interactive Selection Block (If no argument was provided) ---
-        echo "More than one result was found ($ITEM_COUNT items). Please select the correct item:" >&2
-        
+
+        # Interactive selection
         ITEM_LIST=$(echo "$SEARCH_RESULTS_JSON" | jq -r '.[] | .name + "|" + (.login.username // "N/A") + "|" + .id')
-        
+
         COUNTER=1
         declare -a IDS
         echo "------------------------------------------------------------------" >&2
@@ -199,25 +187,22 @@ if [ -n "$BW_SESSION" ]; then
         echo "------------------------------------------------------------------" >&2
 
         while true; do
-            echo -n "Enter the number of the item you want to retrieve (1-$ITEM_COUNT): "
+            echo -n "Enter the number of the item you want to retrieve (1-$ITEM_COUNT): " >&2
             read -r SELECTION
-            
+
             if [[ "$SELECTION" =~ ^[0-9]+$ ]] && [ "$SELECTION" -ge 1 ] && [ "$SELECTION" -le "$ITEM_COUNT" ]; then
                 break
             else
-                echo "Invalid selection. Please enter a number between 1 and $ITEM_COUNT."
+                echo "Invalid selection. Please enter a number between 1 and $ITEM_COUNT." >&2
             fi
         done
-        
-        SELECTED_ID="${IDS[$SELECTION-1]}"
-        echo "Selected item ID: $SELECTED_ID" >&2
 
-        # Final retrieval using the ID
+        SELECTED_ID="${IDS[$SELECTION-1]}"
+
         VAULT_PASSWORD=$(bw get password "$SELECTED_ID" --session "$BW_SESSION")
-        
+
         if [ -n "$VAULT_PASSWORD" ]; then
-            echo "Successfully retrieved password using ID." >&2
-            echo "$VAULT_PASSWORD" # Print password to STDOUT
+            echo "$VAULT_PASSWORD"
         else
             echo "ERROR: Failed to retrieve password using the selected ID." >&2
             exit 1
