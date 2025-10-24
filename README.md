@@ -17,7 +17,7 @@ This repository includes a short init script that is intended to be run immediat
 3. Copy the repository's .aliases to $HOME/.aliases.
 4. Appends to .bashrc - `source .aliases` and adds $HOME/scripts to PATH (existing ~/.bashrc will be backed up) so that all aliases and scripts are activated and ready to use.
 5. Lists all loaded aliases.
-6. Prompt the user (read -n 1) whether to run fixnano (configures nano to enable mouse support and common key bindings - e.g. Ctrl+X = cut; Ctrl+V = Paste; Ctrl+S = Save, Ctrl+F = Find, etc.).
+6. Prompt the user whether to run fixnano (configures nano to enable mouse support and common key bindings - e.g. Ctrl+X = cut; Ctrl+V = Paste; Ctrl+S = Save, Ctrl+F = Find, etc.).
 
 Usage (after cloning):
 
