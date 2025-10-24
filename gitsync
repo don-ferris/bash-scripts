@@ -7,16 +7,16 @@
 # ──────────────────────────────────────────────────────
 # Revision History
 # ----------------
-# v2.4 — 2025-10-24 — Standardize single-line top description format: gitsync strips "# [filename] - " and uses the remainder as the Description (for scripts, skips the shebang and uses the second line). Also preserve .git/next.commit until after a successful push; delete it when consumed or overridden after push success.
+# v2.4 — 2025-10-24 — Standardize single-line top description format: gitsync strips "# [filename] - " and uses the remainder as the Description (for scripts, skips the shebang and uses the second[...]
 # v2.3 — 2025-10-24 — Only delete .git/next.commit after the main push succeeds; if you override the suggested message, mark next.commit for deletion after successful push.
 # v2.2 — 2025-10-23 — Add .git/next.commit integration: display/copy suggested commit message to clipboard and offer it as the default commit message.
-# v2.1 — 2025-10-23 — Standardized header parsing: recognize the boxed header/divider/metadata format and extract the multi-line Description block robustly (skip shebangs, decorative lines, and metadata).
-# v2.0 — 2025-10-23 — Rewrite update_readme: single two-column table (File | Description), File column links to repo blob on current branch, escape pipes, remove legacy 4-column block if present, and read/write via temp file for safety.
+# v2.1 — 2025-10-23 — Standardized header parsing: recognize the boxed header/divider/metadata format and extract the multi-line Description block robustly (skip shebangs, decorative lines, and me[...]
+# v2.0 — 2025-10-23 — Rewrite update_readme: single two-column table (File | Description), File column links to repo blob on current branch, escape pipes, remove legacy 4-column block if present, [...]
 # v1.9 — 2025-10-23 — update_readme now commits and pushes README automatically when it changes.
 # v1.8 — 2025-10-23 — Run update_readme only when a commit was created during the sync run (avoid unnecessary README churn).
 # v1.7 — 2025-10-22 — Interactive conflict handling added: on rebase failure present A/B/C options (auto-recover, manual shell, abort) with automatic stash/reapply attempt.
-# v1.6 — 2025-10-22 — Preflight and auto-track behavior: automatically stage new files by default (git add --all); earlier interactive preflight replaced by automatic staging unless conflict occurs.
-# v1.5 — 2025-10-21 — Multi-account support and .git_ID parsing hardened: allow leading comment lines in .git_ID and use first non-comment mapping line; per-account SSH key selection and origin URL enforcement.
+# v1.6 — 2025-10-22 — Preflight and auto-track behavior: automatically stage new files by default (git add --all); earlier interactive preflight replaced by automatic staging unless conflict occur[...]
+# v1.5 — 2025-10-21 — Multi-account support and .git_ID parsing hardened: allow leading comment lines in .git_ID and use first non-comment mapping line; per-account SSH key selection and origin UR[...]
 # v1.0 — 2025-10-20 — Initial core: stage all changes, prompt for commit message, pull --rebase origin/current-branch, push, and optionally stash/pop untracked files to avoid interference.
 
 ########
@@ -415,12 +415,26 @@ sync_repo() {
     # If .git/next.commit exists use it as default commit message
     local next_commit_file=".git/next.commit"
     local default_msg=""
+
     if [ -f "$next_commit_file" ]; then
       default_msg="$(cat "$next_commit_file")"
-      echo "Default commit message found in $next_commit_file:"
-      echo
+    fi
+
+    # NEW: Clear the screen and display the contents (or not-found) before prompting
+    if command -v clear >/dev/null 2>&1; then
+      clear
+    fi
+    echo "Contents of the next-commit log:"
+    if [ -n "$default_msg" ]; then
       printf '%s\n' "$default_msg"
-      echo
+    else
+      echo "[file not found]"
+    fi
+    echo
+    echo "If you'd like to use this as your commit message, just press the [Enter] key."
+    echo
+
+    if [ -n "$default_msg" ]; then
       if copy_to_clipboard "$default_msg"; then
         echo "(Default commit message copied to clipboard)"
       fi

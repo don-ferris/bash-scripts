@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# script_template.sh - Script template to insure consistency of script header (so that it's picked up properly by gitsync script for auto-updating the RAEDME for the repo.
+# script_template.sh - Script template to insure consistency of script header (so that it's picked up properly by gitsync script for auto-updating the README for the repo.
 # ──────────────────────────────────────────────────────
 # Author: Don Ferris
 # Created: [23-10-2025]
