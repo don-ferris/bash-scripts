@@ -8,7 +8,7 @@ Created: 2025-10-15
 Current Revision: v2.9
 ──────────────────────────────────────────────────────
 Revision History
-v2.8 — 2025-10-26 — [FIX] Push using explicit refspec (HEAD:refs/heads/<branch>) to avoid origin/HEAD push errors and support detached HEADs.
+v2.8 — 2025-10-26 — [FIX] Push using explicit refspec (HEAD:refs/heads/<branch>) to avoid origin/HEAD push errors and support detached HEADs. https://github.com/copilot/c/cf3754e2-7791-4236-bd50-dd7fa483aacc
 
 v2.7 — 2025-10-26 — [FIX] Clean stale rebase state and make auto-recover robust.
 
