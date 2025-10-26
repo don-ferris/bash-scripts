@@ -1,3 +1,6 @@
+# Revision History
+
+# v2.8 — 2025-10-26 — [FIX] Push using explicit refspec (HEAD:refs/heads/<branch>) to avoid origin/HEAD push errors and support detached HEADs.
 #!/usr/bin/env bash
 : <<'SCRIPT_HEADER'
 gitsync - Automate add/commit/pull(rebase)/push across GitHub accounts; auto-stage new files, rebase remote changes, handle conflicts, and auto-update the README table for repo after commits.
@@ -5,13 +8,11 @@ gitsync - Automate add/commit/pull(rebase)/push across GitHub accounts; auto-sta
 Author: Don Ferris/GitHub Copilot
 https://github.com/copilot/c/c5274c01-1515-4dbc-84e8-986126d37384
 Created: 2025-10-15
-Current Revision: v2.9
+Current Revision: v2.8
 ──────────────────────────────────────────────────────
 Revision History
-v2.8 — 2025-10-26 — [FIX] Push using explicit refspec (HEAD:refs/heads/<branch>) to avoid origin/HEAD push errors and support detached HEADs.
-
+================
 v2.7 — 2025-10-26 — [FIX] Clean stale rebase state and make auto-recover robust.
-
 v2.6 — 2025-10-24 — [NEW FEATURE] add -m "commit message" runtime option
 
 v2.5 — 2025-10-24 — [REFINEMENT] Only delete .git/next.commit after the main push succeeds; if you override the suggested message, mark next.commit for deletion after successful push.
