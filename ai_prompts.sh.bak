@@ -679,3 +679,4 @@ fi
 echo "No valid operation specified."
 usage
 exit 1
+>>>>>>> a6e0531 (script_template.sh: made changes to standardized script header formatting, using multi-line comment)

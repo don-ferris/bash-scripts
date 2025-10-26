@@ -133,54 +133,30 @@ TABLE_EOF
     local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/blob/${BRANCH}/${name}"
     local file_link="[\`${name}\`](${url})"
 
-# Collect top-of-file comments (robust to incidental blank comment lines and heredoc headers)
+    # Collect top-of-file comments (robust to incidental blank comment lines)
     local desc=""
     local -a comments=()
-
-    # Detect here-doc style header on line 2, e.g.:
-    #   #!/usr/bin/env bash
-    #   : <<'SCRIPT_HEADER'
-    #   script_template.sh - Description
-    #   ...
-    #   SCRIPT_HEADER
-    local second_line
-    second_line="$(sed -n '2p' "$name" 2>/dev/null || true)"
-    if printf '%s' "$second_line" | grep -qE "^: <<'?[_A-Za-z][_A-Za-z0-9]*'?$"; then
-      # Extract the here-doc token (strip : << and optional quotes)
-      local token
-      token="$(printf '%s' "$second_line" | sed -E "s/^: <<'?([^']*)'?$/\1/")"
-
-      # Read body starting at line 3 until a line exactly equal to token
-      while IFS= read -r line; do
-        if [ "$line" = "$token" ]; then
+    local saw_comments=0
+    while IFS= read -r line; do
+      local tline
+      tline="$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//')"
+      if [[ "$tline" =~ ^#! ]]; then
+        continue
+      fi
+      if [[ "$tline" =~ ^# ]]; then
+        saw_comments=1
+        local comment
+        comment="$(printf '%s' "$tline" | sed -e 's/^#\+//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
+        comments+=("$comment")
+        continue
+      else
+        if [ "$saw_comments" -eq 1 ]; then
+          break
+        else
           break
         fi
-        # Trim leading/trailing whitespace and collect
-        comments+=( "$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//; s/[[:space:]]*$//')" )
-      done < <(tail -n +3 "$name")
-    else
-      local saw_comments=0
-      while IFS= read -r line; do
-        local tline
-        tline="$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//')"
-        if [[ "$tline" =~ ^#! ]]; then
-          continue
-        fi
-        if [[ "$tline" =~ ^# ]]; then
-          saw_comments=1
-          local comment
-          comment="$(printf '%s' "$tline" | sed -e 's/^#\+//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
-          comments+=("$comment")
-          continue
-        else
-          if [ "$saw_comments" -eq 1 ]; then
-            break
-          else
-            break
-          fi
-        fi
-      done < "$name"
-    fi
+      fi
+    done < "$name"
 
     if [ "${#comments[@]}" -gt 0 ]; then
       # Remove leading incidental blank comment lines
