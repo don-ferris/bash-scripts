@@ -205,6 +205,7 @@ TABLE_EOF
         fi
       done < "$name"
     fi
+    fi
 
     if [ "${#comments[@]}" -gt 0 ]; then
       # Remove leading incidental blank comment lines
