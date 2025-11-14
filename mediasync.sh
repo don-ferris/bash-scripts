@@ -66,7 +66,17 @@ init_routine() {
   read -rp "Did the log look good? (y/n): " ok_log
   [[ "${ok_log,,}" != "y" ]] && { log "Init aborted."; exit 1; }
 
+  # Generate unique topic name based on current date/time (MMDD-hhmm)
+  local datetime
+  datetime=$(date +"%m%d-%H%M")
+  local TOPIC="mediasync-test-$datetime"
+  NTFY_TOPIC="$TOPIC"
+
+  echo "Progress and completion notifications will be sent using the topic '$TOPIC'."
+  echo "Be sure you open the ntfy app on your phone and subscribe to this topic."
+
   notify "MediaSync test notification: init routine"
+
   read -rp "Did you receive the notification? (y/n): " ok_notif
   [[ "${ok_notif,,}" != "y" ]] && { log "Init aborted."; exit 1; }
 
@@ -192,6 +202,15 @@ main() {
   [[ -f "$INIT_MARKER" ]] || init_routine
   require_cmd rsync rsync
   require_cmd ntfy ntfy
+
+  # Generate unique topic name based on current date/time (MMDD-hhmm)
+  local datetime
+  datetime=$(date +"%m%d-%H%M")
+  local TOPIC="mediasync-test-$datetime"
+  NTFY_TOPIC="$TOPIC"
+
+  echo "Progress and completion notifications will be sent using the topic '$TOPIC'."
+  echo "Be sure you open the ntfy app on your phone and subscribe to this topic."
 
   build_list
   [[ -s "$LIST_FILE" ]] || { log "No pairs provided."; exit 0; }
