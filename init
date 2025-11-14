@@ -3,11 +3,10 @@
 # ──────────────────────────────────────────────────────
 # Author: Don Ferris
 # Created: [20-10-2025]
-# Current Revision: v1.1
+# Current Revision: v1.0
 # ──────────────────────────────────────────────────────
 # Revision History
 # ----------------
-# v1.1 — 2025-11-14 — Add installation of ntfy (used by mediasync.sh and useful for providing notifications when long-running processes have completed); add logic allowing init to be run multiple times without rerunning previously run commands.
 # v1.0 — 2025-10-24 — Core functionality
 ######## ########
 
@@ -54,6 +53,28 @@ install_ntfy() {
         info "ntfy installed successfully."
     else
         info "ntfy is already installed."
+    fi
+}
+
+# Test ntfy installation and provide usage instructions
+test_ntfy() {
+    info "Testing ntfy installation..."
+    if ntfy send "MediaSync: Test notification from init script" 2>/dev/null; then
+        info "ntfy test notification sent successfully"
+    else
+        warn "ntfy test failed - may need manual configuration"
+        printf "\n\033[1mNTFY CONFIGURATION REQUIRED:\033[0m\n"
+        printf "To use ntfy for notifications, you may need to:\n"
+        printf "1. Start the service: sudo systemctl start ntfy\n"
+        printf "2. Enable on boot: sudo systemctl enable ntfy\n"
+        printf "3. Check status: sudo systemctl status ntfy\n"
+        printf "4. Configure server: edit /etc/ntfy/server.yml\n"
+        printf "5. For public ntfy.sh, use: ntfy publish your-topic 'message'\n"
+        printf "\nUsage examples:\n"
+        printf "  ntfy send 'Hello World'\n"
+        printf "  ntfy publish mytopic 'Message with topic'\n"
+        printf "  echo 'Message' | ntfy send\n"
+        printf "\nSee: ntfy --help for more options\n\n"
     fi
 }
 
@@ -140,7 +161,10 @@ alias || true
 # 8) Install ntfy
 install_ntfy
 
-# 9) Prompt to run fixnano
+# 9) Test ntfy and provide configuration instructions
+test_ntfy
+
+# 10) Prompt to run fixnano
 printf "\n\033[1mfixnano\033[0m: Configure nano to enable mouse support and useful key bindings (improves terminal editing).\n"
 read -n 1 -r -p "Run fixnano now? [y/N] " ANSWER
 printf "\n"
