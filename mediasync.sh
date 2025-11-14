@@ -16,7 +16,7 @@ PROGRESS_INTERVAL=10
 #   checksum   - Slowest. Per-file SHA256 comparison. Reads every byte. Most thorough.
 VERIFY_MODE="file_size"
 
-NTFY_TOPIC="${NTFY_TOPIC:-mediasync}"  # set your ntfy topic here
+NTFY_TOPIC="${NTFY_TOPIC:-mediasync}"
 
 log() { printf "[%s] %s\n" "$APP_NAME" "$*"; }
 
@@ -50,11 +50,16 @@ init_routine() {
   read -rp "Init: Enter a small source directory for dry-run: " test_src
   read -rp "Init: Enter a destination directory for dry-run: " test_dst
   [[ -z "$test_src" || -z "$test_dst" ]] && { log "Init aborted."; exit 1; }
-  [[ -d "$test_src" ]] || { log "Source does not exist."; exit 1; }
+
+  test_src=$(realpath "$test_src")
+  test_dst=$(realpath -m "$test_dst")
+
+  [[ -d "$test_src" ]] || { log "Source does not exist: $test_src"; exit 1; }
   mkdir -p "$test_dst"
 
+  log "Init dry-run: source=$test_src dest=$test_dst"
   local log_file="$LOG_DIR/mediasync_init.log"
-  rsync -aP --dry-run --max-size=50M "$test_src"/ "$test_dst"/ | tee "$log_file" >/dev/null
+  rsync -aP --dry-run --max-size=50M "$test_src" "$test_dst" | tee "$log_file" >/dev/null
 
   read -rp "Press any key to display the log file..." -n1 -s
   less "$log_file"
@@ -75,9 +80,11 @@ build_list() {
   while true; do
     read -rp "Source directory: " src
     [[ -z "$src" ]] && break
-    [[ -d "$src" ]] || { log "Source does not exist."; continue; }
+    src=$(realpath "$src")
+    [[ -d "$src" ]] || { log "Source does not exist: $src"; continue; }
     read -rp "Destination directory: " dst
     [[ -z "$dst" ]] && { log "Destination cannot be empty."; continue; }
+    dst=$(realpath -m "$dst")
     mkdir -p "$dst"
     printf "%s\t%s\n" "$src" "$dst" >> "$LIST_FILE"
     log "Added pair: $src -> $dst"
@@ -88,6 +95,8 @@ prepare_counts() {
   local total=0
   : > "$COUNT_FILE"
   while IFS=$'\t' read -r src dst; do
+    src=$(realpath "$src")
+    dst=$(realpath -m "$dst")
     local c
     c=$(find "$src" -type f | wc -l)
     printf "%s\t%s\t%s\n" "$c" "$src" "$dst" >> "$COUNT_FILE"
@@ -98,7 +107,9 @@ prepare_counts() {
 
 copy_pair() {
   local src="$1" dst="$2"
-  if ! rsync -aP "$src"/ "$dst"/; then
+  src=$(realpath "$src")
+  dst=$(realpath -m "$dst")
+  if ! rsync -aP "$src" "$dst"; then
     log "ERROR: rsync failed for $src -> $dst"
     return 1
   fi
@@ -106,6 +117,8 @@ copy_pair() {
 
 verify_pair_size() {
   local src="$1" dst="$2" log_file="$3"
+  src=$(realpath "$src")
+  dst=$(realpath -m "$dst")
   find "$src" -type f -print0 | while IFS= read -r -d '' sfile; do
     local rel="${sfile#$src/}" dfile="$dst/$rel"
     if [[ -f "$dfile" ]]; then
@@ -125,12 +138,16 @@ verify_pair_size() {
 
 verify_pair_diff() {
   local src="$1" dst="$2" log_file="$3"
+  src=$(realpath "$src")
+  dst=$(realpath -m "$dst")
   require_cmd diff diffutils
   diff -qr "$src" "$dst" > "$log_file" || true
 }
 
 verify_pair_hashdeep() {
   local src="$1" dst="$2" log_file="$3"
+  src=$(realpath "$src")
+  dst=$(realpath -m "$dst")
   require_cmd hashdeep hashdeep
   local src_hash="/tmp/mediasync_src_${RANDOM}.hash"
   hashdeep -r "$src" > "$src_hash"
@@ -140,6 +157,8 @@ verify_pair_hashdeep() {
 
 verify_pair_checksum() {
   local src="$1" dst="$2" log_file="$3"
+  src=$(realpath "$src")
+  dst=$(realpath -m "$dst")
   require_cmd sha256sum coreutils
   find "$src" -type f -print0 | while IFS= read -r -d '' sfile; do
     local rel="${sfile#$src/}" dfile="$dst/$rel"
@@ -189,32 +208,27 @@ main() {
   while IFS=$'\t' read -r pair_files src dst; do
     pair_index=$((pair_index + 1))
 
-    # Copy with error handling
     if ! copy_pair "$src" "$dst"; then
-      notify "$APP_NAME: ERROR during copy for pair $pair_index ($src -> $dst). Skipping verification for this pair."
+      notify "$APP_NAME: ERROR during copy for pair $pair_index ($src -> $dst). Skipping verification."
       {
         echo "Pair $pair_index: $src -> $dst"
-        echo "COPY ERROR: rsync failed; verification skipped for this pair."
+        echo "COPY ERROR: rsync failed; verification skipped."
         echo "----"
       } >> "$SUMMARY_LOG"
-      # Continue to next pair (to abort instead, replace 'continue' with 'exit 1')
       continue
     fi
 
-    # Verification per pair
     local log_file="$LOG_DIR/mediasync_pair${pair_index}.log"
     : > "$log_file"
     verify_pair "$src" "$dst" "$log_file"
     notify "$APP_NAME: verification for pair $pair_index written to $log_file"
 
-    # Append to summary
     {
       echo "Pair $pair_index: $src -> $dst"
       cat "$log_file"
       echo "----"
     } >> "$SUMMARY_LOG"
 
-    # Progress accounting
     files_done=$((files_done + pair_files))
     if [[ "$total" -gt 0 ]]; then
       local percent=$(( (files_done * 100) / total ))
