@@ -198,6 +198,60 @@ verify_pair() {
   esac
 }
 
+# Check if a file exists in destination and matches using selected comparison method
+file_exists_and_matches() {
+  local sfile="$1" dfile="$2"
+  
+  # If destination file doesn't exist, no match
+  [[ -f "$dfile" ]] || return 1
+  
+  case "$VERIFY_MODE" in
+    file_size)
+      local ssize dsize
+      ssize=$(stat -c %s "$sfile")
+      dsize=$(stat -c %s "$dfile")
+      [[ "$ssize" -eq "$dsize" ]]
+      ;;
+    diff)
+      require_cmd diff diffutils
+      diff -q "$sfile" "$dfile" >/dev/null 2>&1
+      ;;
+    hashdeep)
+      require_cmd hashdeep hashdeep
+      local src_hash dst_hash
+      src_hash=$(hashdeep -l "$sfile" 2>/dev/null | tail -1 | awk '{print $1}')
+      dst_hash=$(hashdeep -l "$dfile" 2>/dev/null | tail -1 | awk '{print $1}')
+      [[ -n "$src_hash" && "$src_hash" == "$dst_hash" ]]
+      ;;
+    checksum)
+      require_cmd sha256sum coreutils
+      local sh_src sh_dst
+      sh_src=$(sha256sum "$sfile" | awk '{print $1}')
+      sh_dst=$(sha256sum "$dfile" | awk '{print $1}')
+      [[ "$sh_src" == "$sh_dst" ]]
+      ;;
+    *)
+      log "Unknown VERIFY_MODE: $VERIFY_MODE"
+      return 1
+      ;;
+  esac
+}
+
+# Copy a single file from source to destination, preserving directory structure
+copy_single_file() {
+  local sfile="$1" dfile="$2"
+  local ddir
+  ddir=$(dirname "$dfile")
+  mkdir -p "$ddir"
+  cp -a "$sfile" "$dfile"
+}
+
+# Verify a single file copy using the selected method
+verify_single_file() {
+  local sfile="$1" dfile="$2"
+  file_exists_and_matches "$sfile" "$dfile"
+}
+
 main() {
   [[ -f "$INIT_MARKER" ]] || init_routine
   require_cmd rsync rsync
@@ -215,50 +269,73 @@ main() {
   build_list
   [[ -s "$LIST_FILE" ]] || { log "No pairs provided."; exit 0; }
 
-  local total files_done next_threshold
+  local total
   total=$(prepare_counts)
-  files_done=0
-  next_threshold=$PROGRESS_INTERVAL
 
   : > "$SUMMARY_LOG"
-  notify "$APP_NAME started: total files $total"
 
   local pair_index=0
   while IFS=$'\t' read -r pair_files src dst; do
     pair_index=$((pair_index + 1))
-
-    if ! copy_pair "$src" "$dst"; then
-      notify "$APP_NAME: ERROR during copy for pair $pair_index ($src -> $dst). Skipping verification."
-      {
-        echo "Pair $pair_index: $src -> $dst"
-        echo "COPY ERROR: rsync failed; verification skipped."
-        echo "----"
-      } >> "$SUMMARY_LOG"
-      continue
-    fi
-
+    
+    src=$(realpath "$src")
+    dst=$(realpath -m "$dst")
+    
+    # Send start notification for this pair
+    notify "MediaSync started for pair $pair_index: $src -> $dst"
+    
     local log_file="$LOG_DIR/mediasync_pair${pair_index}.log"
     : > "$log_file"
-    verify_pair "$src" "$dst" "$log_file"
-    notify "$APP_NAME: verification for pair $pair_index written to $log_file"
-
+    
+    # Calculate progress interval for this pair
+    local interval_size files_processed
+    interval_size=$(( (pair_files + PROGRESS_INTERVAL - 1) / PROGRESS_INTERVAL ))
+    [[ "$interval_size" -lt 1 ]] && interval_size=1
+    files_processed=0
+    local next_notify_at=$interval_size
+    
+    # Process each file in the source directory
+    while IFS= read -r -d '' sfile; do
+      local rel="${sfile#"$src"/}"
+      local dfile="$dst/$rel"
+      
+      if file_exists_and_matches "$sfile" "$dfile"; then
+        # Match found, log and skip
+        echo "MATCH found: $sfile -> $dfile" >> "$log_file"
+      else
+        # No match, copy and verify
+        if copy_single_file "$sfile" "$dfile"; then
+          if verify_single_file "$sfile" "$dfile"; then
+            echo "COPIED and VERIFIED: $sfile -> $dfile" >> "$log_file"
+          else
+            echo "COPIED but VERIFICATION FAILED: $sfile -> $dfile" >> "$log_file"
+          fi
+        else
+          echo "COPY FAILED: $sfile -> $dfile" >> "$log_file"
+        fi
+      fi
+      
+      files_processed=$((files_processed + 1))
+      
+      # Send progress notification at intervals
+      if [[ "$files_processed" -ge "$next_notify_at" ]] && [[ "$pair_files" -gt 0 ]]; then
+        local percent=$(( (files_processed * 100) / pair_files ))
+        notify "MediaSync for $src -> $dst is ${percent}% complete"
+        next_notify_at=$((next_notify_at + interval_size))
+      fi
+    done < <(find "$src" -type f -print0)
+    
+    # Send completion notification for this pair
+    notify "MediaSync completed for pair $pair_index: $src -> $dst. Log: $log_file"
+    
     {
       echo "Pair $pair_index: $src -> $dst"
       cat "$log_file"
       echo "----"
     } >> "$SUMMARY_LOG"
-
-    files_done=$((files_done + pair_files))
-    if [[ "$total" -gt 0 ]]; then
-      local percent=$(( (files_done * 100) / total ))
-      if [[ "$percent" -ge "$next_threshold" ]]; then
-        notify "$APP_NAME is ${percent}% complete — ${files_done} of ${total} files copied and verified."
-        next_threshold=$((next_threshold + PROGRESS_INTERVAL))
-      fi
-    fi
+    
   done < "$COUNT_FILE"
 
-  notify "$APP_NAME: All copies and verifications completed. Summary log at $SUMMARY_LOG"
   log "Done."
 }
 
