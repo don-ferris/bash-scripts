@@ -69,7 +69,7 @@ init_routine() {
   # Generate unique topic name based on current date/time (MMDD-hhmm)
   local datetime
   datetime=$(date +"%m%d-%H%M")
-  local TOPIC="mediasync-test-$datetime"
+  local TOPIC="mediasync-$datetime"
   NTFY_TOPIC="$TOPIC"
 
   echo "Progress and completion notifications will be sent using the topic '$TOPIC'."
@@ -206,7 +206,7 @@ main() {
   # Generate unique topic name based on current date/time (MMDD-hhmm)
   local datetime
   datetime=$(date +"%m%d-%H%M")
-  local TOPIC="mediasync-test-$datetime"
+  local TOPIC="mediasync-$datetime"
   NTFY_TOPIC="$TOPIC"
 
   echo "Progress and completion notifications will be sent using the topic '$TOPIC'."
