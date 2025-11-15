@@ -85,7 +85,7 @@ send_ntfy_notification() {
         return 1
     fi
     
-    curl -s \
+    curl -s --max-time 10 \
         -H "Title: $title" \
         -H "Priority: $priority" \
         -d "$message" \
@@ -114,16 +114,23 @@ test_notification_delivery() {
     send_ntfy_notification "MediaSync notification system is ready! You will receive progress updates here." "high" "MediaSync Test"
     
     echo ""
-    read -p "Did you receive the test notification? (yes/no): " response
+    read -p "Did you receive the test notification? (y/N): " response
     
-    if [[ "$response" =~ ^[Yy] ]]; then
+    # Convert to lowercase for comparison
+    response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+    
+    if [[ "$response" == "y" || "$response" == "yes" ]]; then
         log_message "Notification system verified successfully" "INFO"
         send_ntfy_notification "Notification system verified. Starting sync operations..." "default" "MediaSync"
         return 0
     else
         log_message "Notification test failed or not confirmed" "WARN"
-        read -p "Continue without notifications? (yes/no): " continue_response
-        if [[ "$continue_response" =~ ^[Yy] ]]; then
+        read -p "Continue without notifications? (y/N): " continue_response
+        
+        # Convert to lowercase for comparison
+        continue_response=$(echo "$continue_response" | tr '[:upper:]' '[:lower:]')
+        
+        if [[ "$continue_response" == "y" || "$continue_response" == "yes" ]]; then
             return 0
         else
             log_message "User chose to exit due to notification issues" "INFO"
@@ -163,10 +170,10 @@ check_and_install_dependencies() {
         log_message "Installing missing dependencies..." "INFO"
         
         if command -v apt-get &> /dev/null; then
-            yes | sudo apt-get update -qq
-            yes | sudo apt-get install -y -qq "${missing_deps[@]}" 2>&1 | tee -a "$LOG_FILE"
+            yes | apt-get update -qq
+            yes | apt-get install -y -qq "${missing_deps[@]}" 2>&1 | tee -a "$LOG_FILE"
         elif command -v yum &> /dev/null; then
-            yes | sudo yum install -y "${missing_deps[@]}" 2>&1 | tee -a "$LOG_FILE"
+            yes | yum install -y "${missing_deps[@]}" 2>&1 | tee -a "$LOG_FILE"
         else
             log_error "Package manager not found. Please install manually: ${missing_deps[*]}"
             exit 1
@@ -718,10 +725,25 @@ cleanup_and_report() {
 }
 
 ################################################################################
+# Root Check
+################################################################################
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo "Error: This script must be run as root"
+        echo "Please run with: sudo $0"
+        exit 1
+    fi
+}
+
+################################################################################
 # Main Function
 ################################################################################
 
 main() {
+    # Check if running as root
+    check_root
+    
     echo "========================================"
     echo "MediaSync - Media Synchronization Tool"
     echo "========================================"
