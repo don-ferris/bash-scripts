@@ -20,6 +20,7 @@ SYNC_ERRORS=0
 PROGRESS_INTERVAL=10
 VERIFY_MODE="diff"
 LOG_FILE="/tmp/mediasync_$(date +%Y%m%d_%H%M%S).log"
+SCRIPT_STARTED=false
 ERR_LOG_FILE="/tmp/mediasync_errors_$(date +%Y%m%d_%H%M%S).log"
 SYNC_LIST_FILE="/tmp/mediasync.list"
 TOTAL_FILES=0
@@ -159,20 +160,28 @@ check_and_install_dependencies() {
         fi
     done
     
-    # Check for hashdeep separately as it's optional but recommended
+    # Check for hashdeep separately as it's optional
+    local hashdeep_missing=false
     if ! command -v hashdeep &> /dev/null; then
-        missing_deps+=("hashdeep")
+        log_message "hashdeep not found (optional for enhanced verification)" "INFO"
+        hashdeep_missing=true
     fi
     
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        log_message "Missing dependencies: ${missing_deps[*]}" "WARN"
+        log_message "Missing required dependencies: ${missing_deps[*]}" "WARN"
         log_message "Installing missing dependencies..." "INFO"
         
         if command -v apt-get &> /dev/null; then
-            yes | apt-get update -qq
-            yes | apt-get install -y -qq "${missing_deps[@]}" 2>&1 | tee -a "$LOG_FILE"
+            apt-get update -qq 2>&1 | tee -a "$LOG_FILE" || true
+            apt-get install -y -qq "${missing_deps[@]}" 2>&1 | tee -a "$LOG_FILE" || {
+                log_error "Failed to install some dependencies: ${missing_deps[*]}"
+                exit 1
+            }
         elif command -v yum &> /dev/null; then
-            yes | yum install -y "${missing_deps[@]}" 2>&1 | tee -a "$LOG_FILE"
+            yum install -y "${missing_deps[@]}" 2>&1 | tee -a "$LOG_FILE" || {
+                log_error "Failed to install some dependencies: ${missing_deps[*]}"
+                exit 1
+            }
         else
             log_error "Package manager not found. Please install manually: ${missing_deps[*]}"
             exit 1
@@ -180,7 +189,23 @@ check_and_install_dependencies() {
         
         log_message "Dependencies installed successfully" "INFO"
     else
-        log_message "All dependencies satisfied" "INFO"
+        log_message "All required dependencies satisfied" "INFO"
+    fi
+    
+    # Try to install hashdeep if missing (optional)
+    if [[ "$hashdeep_missing" == "true" ]]; then
+        log_message "Attempting to install hashdeep (optional)..." "INFO"
+        if command -v apt-get &> /dev/null; then
+            apt-get install -y -qq hashdeep 2>&1 | tee -a "$LOG_FILE" || true
+        elif command -v yum &> /dev/null; then
+            yum install -y hashdeep 2>&1 | tee -a "$LOG_FILE" || true
+        fi
+        
+        if command -v hashdeep &> /dev/null; then
+            log_message "hashdeep installed successfully" "INFO"
+        else
+            log_message "hashdeep not available (will use other verification methods)" "INFO"
+        fi
     fi
 }
 
@@ -689,17 +714,19 @@ Log file: $LOG_FILE"
 }
 
 cleanup_temporary_files() {
-    log_message "Cleaning up temporary files..." "INFO"
-    
-    if [[ -f "$SYNC_LIST_FILE" ]]; then
-        rm -f "$SYNC_LIST_FILE"
+    if [[ "$SCRIPT_STARTED" == "true" ]]; then
+        log_message "Cleaning up temporary files..." "INFO"
+        
+        if [[ -f "$SYNC_LIST_FILE" ]]; then
+            rm -f "$SYNC_LIST_FILE"
+        fi
+        
+        # Clean up any hash files that might be left over
+        rm -f /tmp/mediasync_source_hashes_$$.txt
+        rm -f /tmp/mediasync_dest_hashes_$$.txt
+        
+        log_message "Cleanup completed" "INFO"
     fi
-    
-    # Clean up any hash files that might be left over
-    rm -f /tmp/mediasync_source_hashes_$$.txt
-    rm -f /tmp/mediasync_dest_hashes_$$.txt
-    
-    log_message "Cleanup completed" "INFO"
 }
 
 cleanup_and_report() {
@@ -742,6 +769,9 @@ check_root() {
 main() {
     # Check if running as root
     check_root
+    
+    # Mark that script has started (for cleanup guard)
+    SCRIPT_STARTED=true
     
     echo "========================================"
     echo "MediaSync - Media Synchronization Tool"
