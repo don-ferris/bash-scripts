@@ -34,7 +34,7 @@ find "$SRC" -type f | while read -r SRC_FILE; do
             ((TOTAL_PROC_COUNT++))
             if (( PROC_COUNT == NTFY_INTERVAL )); then
                 ntfy send "$NTFY_TOPIC" \
-                    "MediaSync [$SRC] >> [$DEST] - [$TOTAL_PROC_COUNT] of [$TOTAL_COUNT] files processed with [$ERR_COUNT] errors."
+                    "MediaSync $SRC >> $DEST - $TOTAL_PROC_COUNT of $TOTAL_COUNT files processed with $ERR_COUNT errors."
                 PROC_COUNT=0
             fi
             continue
@@ -55,11 +55,11 @@ find "$SRC" -type f | while read -r SRC_FILE; do
     ((TOTAL_PROC_COUNT++))
     if (( PROC_COUNT == NTFY_INTERVAL )); then
         ntfy send "$NTFY_TOPIC" \
-            "MediaSync [$SRC] >> [$DEST] - [$TOTAL_PROC_COUNT] of [$TOTAL_COUNT] files processed with [$ERR_COUNT] errors."
+            "MediaSync $SRC >> $DEST - $TOTAL_PROC_COUNT of $TOTAL_COUNT files processed with $ERR_COUNT errors."
         PROC_COUNT=0
     fi
 done
 
 # Final notification
 ntfy send "$NTFY_TOPIC" \
-    "MediaSync [$SRC] >> [$DEST] - COMPLETE - [$TOTAL_PROC_COUNT] of [$TOTAL_COUNT] files processed. There were [$ERR_COUNT] errors."
+    "MediaSync $SRC >> $DEST - COMPLETE - $TOTAL_PROC_COUNT of $TOTAL_COUNT files processed. There were $ERR_COUNT errors."
