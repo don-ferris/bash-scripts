@@ -60,19 +60,23 @@ echo "Comparison started at $(date)" > "$LOG_FILE"
 echo "Comparison started at $(date)" > "$DIFF_LOG"
 echo "Comparison started at $(date)" > "$COPYFAIL_LOG"
 
+# Track counters for each directory - declare BEFORE the loops so they persist
+declare -A dir_total dir_same dir_diff dir_copyfail
+
 # Replicate the directory tree from SRC into DEST (creates any needed subdirs up-front).
-# This avoids repeating mkdir for each file later and is fast for large trees.
-# Use -print0 to handle names with special characters.
-find "$src" -type d -print0 | while IFS= read -r -d '' d; do
+# Use process substitution to avoid subshell variable scoping issues
+while IFS= read -r -d '' d; do
   # Compute relative directory path from SRC (strip SRC prefix and any leading slash)
   rel="${d#$src}"
   rel="${rel#/}"
   mkdir -p "$dst/$rel"
-done
+done < <(find "$src" -type d -print0)
 
 # Get file counts for each directory and log them
 echo "Analyzing directory structure..." | tee -a "$LOG_FILE"
-find "$src" -type d -print0 | while IFS= read -r -d '' d; do
+
+# Use process substitution to count files per directory and send notifications
+while IFS= read -r -d '' d; do
   # Compute relative directory path from SRC
   rel="${d#$src}"
   rel="${rel#/}"
@@ -93,19 +97,11 @@ find "$src" -type d -print0 | while IFS= read -r -d '' d; do
     # Send ntfy notification for directory start
     curl -s -X POST -d "Syncing $file_count files in $dir_name" https://ntfy.sh/tango-tango-8tst >/dev/null 2>&1
   fi
-done
-
-# Track counters for each directory
-declare -A dir_total dir_same dir_diff dir_copyfail
-
-# Initialize counters
-dir_total=()
-dir_same=()
-dir_diff=()
-dir_copyfail=()
+done < <(find "$src" -type d -print0)
 
 # Walk through files in SRC and compare to DEST. If missing, copy then recompare.
-find "$src" -type f -print0 | while IFS= read -r -d '' f; do
+# Use process substitution to avoid subshell issues
+while IFS= read -r -d '' f; do
   # Relative path of the file under SRC
   rel="${f#$src}"
   rel="${rel#/}"
@@ -169,7 +165,7 @@ find "$src" -type f -print0 | while IFS= read -r -d '' f; do
       ((dir_copyfail[$track_dir]++))
     fi
   fi
-done
+done < <(find "$src" -type f -print0)
 
 # Write summary for each directory
 echo "" >> "$LOG_FILE"
@@ -185,7 +181,7 @@ for dir in "${!dir_total[@]}"; do
   echo "Finished syncing $total files in $dir - $same files were the same, $diff files were different, and $copyfail files failed to copy. See $LOG_FILE, $DIFF_LOG and $COPYFAIL_LOG for details." >> "$LOG_FILE"
   
   # Send ntfy notification with summary
-  curl -s -X POST -d "Finished syncing $total files in $dir..." https://ntfy.sh/tango-tango-8tst >/dev/null 2>&1
+  curl -s -X POST -d "Finished syncing $total files in $dir - $same files were the same, $diff files were different, and $copyfail files failed to copy" https://ntfy.sh/tango-tango-8tst >/dev/null 2>&1
 done
 
 echo "" >> "$LOG_FILE"
