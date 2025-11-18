@@ -63,8 +63,19 @@ echo "Comparison started at $(date)" > "$COPYFAIL_LOG"
 # Track counters for each directory - declare BEFORE the loops so they persist
 declare -A dir_total dir_same dir_diff dir_copyfail
 
+# Function to get tracking directory name consistently
+get_track_dir() {
+  local rel_path="$1"
+  local dir_path=$(dirname "$rel_path")
+  if [ "$dir_path" = "." ]; then
+    echo "root"
+  else
+    echo "$dir_path"
+  fi
+}
+
 # Replicate the directory tree from SRC into DEST (creates any needed subdirs up-front).
-# Use process substitution to avoid subshell variable scoping issues
+echo "Creating directory structure..." | tee -a "$LOG_FILE"
 while IFS= read -r -d '' d; do
   # Compute relative directory path from SRC (strip SRC prefix and any leading slash)
   rel="${d#$src}"
@@ -75,7 +86,10 @@ done < <(find "$src" -type d -print0)
 # Get file counts for each directory and log them
 echo "Analyzing directory structure..." | tee -a "$LOG_FILE"
 
-# Use process substitution to count files per directory and send notifications
+# Use a temporary file to store directory information
+TEMP_DIRS=$(mktemp)
+find "$src" -type d -print0 > "$TEMP_DIRS"
+
 while IFS= read -r -d '' d; do
   # Compute relative directory path from SRC
   rel="${d#$src}"
@@ -92,15 +106,23 @@ while IFS= read -r -d '' d; do
   file_count=$(find "$d" -maxdepth 1 -type f | wc -l)
   
   if [ "$file_count" -gt 0 ]; then
-    echo "Syncing $file_count files in $dir_name" | tee -a "$LOG_FILE"
+    echo "Starting sync of $file_count files in $dir_name" | tee -a "$LOG_FILE"
     
     # Send ntfy notification for directory start
-    curl -s -X POST -d "Syncing $file_count files in $dir_name" https://ntfy.sh/tango-tango-8tst >/dev/null 2>&1
+    curl -s -X POST -d "Starting sync of $file_count files in $dir_name" https://ntfy.sh/tango-tango-8tst >/dev/null 2>&1
+    
+    # Initialize counters for this directory
+    track_dir=$(get_track_dir "$rel")
+    dir_total[$track_dir]=0
+    dir_same[$track_dir]=0
+    dir_diff[$track_dir]=0
+    dir_copyfail[$track_dir]=0
   fi
-done < <(find "$src" -type d -print0)
+done < "$TEMP_DIRS"
+rm -f "$TEMP_DIRS"
 
 # Walk through files in SRC and compare to DEST. If missing, copy then recompare.
-# Use process substitution to avoid subshell issues
+echo "Processing files..." | tee -a "$LOG_FILE"
 while IFS= read -r -d '' f; do
   # Relative path of the file under SRC
   rel="${f#$src}"
@@ -110,21 +132,8 @@ while IFS= read -r -d '' f; do
   dest_file="$dst/$rel"
 
   # Get the directory for tracking
-  dir_path=$(dirname "$rel")
-  if [ "$dir_path" = "." ]; then
-    track_dir="root"
-  else
-    track_dir="$dir_path"
-  fi
+  track_dir=$(get_track_dir "$rel")
   
-  # Initialize directory counters if not set
-  if [ -z "${dir_total[$track_dir]+isset}" ]; then
-    dir_total[$track_dir]=0
-    dir_same[$track_dir]=0
-    dir_diff[$track_dir]=0
-    dir_copyfail[$track_dir]=0
-  fi
-
   # Increment total file count for this directory
   ((dir_total[$track_dir]++))
 
