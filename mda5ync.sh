@@ -1,11 +1,124 @@
 #!/usr/bin/env bash
 # mda5ync.sh - compare md5 hashes between SRC and DEST, copying missing files first
-
+# Usage:
+#   mda5ync.sh SRC DEST
+#
+# This variant is simplified for Ubuntu Server and hard-codes apt installs.
+# Bugfixes included:
+# - reliably iterates all subdirectories (no subshell/pipeline issues)
+# - correctly counts files per directory and processes them
+# - clearer, robust handling of pip-installed ntfy in ~/.local/bin
+#
+# Behaviour:
+# - copies missing files, then compares md5 and logs SAME/DIFF
+# - creates three logs with timestamped names (main, diffs, copy-fails)
+# - sends ntfy notifications (topic: tango-tango-8tst) for start/finish of each directory
+# - opens main log in nano at the end if available
 set -o errexit
 set -o nounset
 set -o pipefail
 
-# If two parameters passed, use them; otherwise prompt for both.
+# Ensure the script is run as root (required for package installation actions).
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Error: this script must be run as root." >&2
+  exit 1
+fi
+
+# apt-only install helper (keeps installs non-interactive)
+apt_install() {
+  local pkg="$1"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq >/dev/null 2>&1 || return 1
+  apt-get install -y -qq "$pkg" >/dev/null 2>&1 || return 1
+  return 0
+}
+
+# Ensure a command exists, otherwise try to install it automatically via apt-get (or pip3 for ntfy).
+ensure_command() {
+  local cmd="$1"
+
+  if command -v "$cmd" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Command '$cmd' not found. Attempting to install it automatically using apt-get..."
+
+  if [ "$cmd" = "curl" ]; then
+    if apt_install curl; then
+      echo "Installed curl via apt-get."
+      return 0
+    else
+      echo "Failed to install curl via apt-get. Please install curl manually." >&2
+      return 1
+    fi
+  elif [ "$cmd" = "ntfy" ]; then
+    # Prefer pip3 global install if available
+    if command -v pip3 >/dev/null 2>&1; then
+      if pip3 install ntfy >/dev/null 2>&1; then
+        if command -v ntfy >/dev/null 2>&1; then
+          echo "Installed ntfy via pip3."
+          return 0
+        fi
+      fi
+    fi
+
+    # Try pip fallback
+    if command -v pip >/dev/null 2>&1; then
+      if pip install ntfy >/dev/null 2>&1; then
+        if command -v ntfy >/dev/null 2>&1; then
+          echo "Installed ntfy via pip."
+          return 0
+        fi
+      fi
+    fi
+
+    # Install pip3 via apt-get and retry
+    if apt_install python3-pip; then
+      if command -v pip3 >/dev/null 2>&1; then
+        if pip3 install ntfy >/dev/null 2>&1; then
+          if command -v ntfy >/dev/null 2>&1; then
+            echo "Installed ntfy via pip3 (after installing python3-pip)."
+            return 0
+          fi
+        fi
+      fi
+    fi
+
+    # Try apt-get for ntfy (best-effort)
+    if apt_install ntfy; then
+      if command -v ntfy >/dev/null 2>&1; then
+        echo "Installed ntfy via apt-get."
+        return 0
+      fi
+    fi
+
+    echo "Failed to install ntfy automatically. Please install ntfy (pip3 install ntfy) or via apt-get." >&2
+    return 1
+  else
+    echo "No automatic install procedure for '$cmd' implemented." >&2
+    return 1
+  fi
+}
+
+# Ensure curl and ntfy are available
+if ! command -v curl >/dev/null 2>&1; then
+  if ! ensure_command curl; then
+    echo "Error: curl is required but could not be installed automatically." >&2
+    exit 1
+  fi
+fi
+
+if ! command -v ntfy >/dev/null 2>&1; then
+  if ! ensure_command ntfy; then
+    echo "Error: ntfy is required but could not be installed automatically." >&2
+    exit 1
+  fi
+fi
+
+# Make sure pip-installed user binaries are on PATH (for root this can be ~/.local/bin)
+export PATH="$HOME/.local/bin:$PATH"
+
+# Get src/dst
 if [ "$#" -eq 2 ]; then
   src="$1"
   dst="$2"
@@ -14,17 +127,16 @@ else
   read -rp "Enter destination directory: " dst
 fi
 
-# Normalize paths
+# Normalize paths (remove trailing slashes)
 src="${src%/}"
 dst="${dst%/}"
 
-# Validate SRC exists and is a directory
+# Validate SRC exists and contains at least one file somewhere in the tree
 if [ ! -d "$src" ]; then
   echo "Error: source directory '$src' does not exist or is not a directory." >&2
   exit 1
 fi
 
-# Validate SRC is not empty
 if ! find "$src" -type f -print -quit | grep -q .; then
   echo "Error: source directory '$src' contains no files to compare." >&2
   exit 1
@@ -33,141 +145,117 @@ fi
 # Ensure DEST exists
 mkdir -p "$dst"
 
-# Generate log filenames
-timestamp=$(date +%y-%j-%H%M)
-LOG_FILE="mda5ync_${timestamp}.log"
-DIFF_LOG="mda5ync-diff_${timestamp}.log"
-COPYFAIL_LOG="mda5ync-copyfail_${timestamp}.log"
+# Timestamp and logs
+ts=$(date +"%y%j-%H%M")
+logfile="mda5ync_${ts}.log"
+diff_log="mda5ync-diff_${ts}.log"
+copyfail_log="mda5ync-copyfail_${ts}.log"
 
-# Initialize log files
-echo "Comparison started at $(date)" > "$LOG_FILE"
-echo "Comparison started at $(date)" > "$DIFF_LOG"
-echo "Comparison started at $(date)" > "$COPYFAIL_LOG"
+echo "mda5ync (md5 MediaSync) started at $(date)" > "$logfile"
+echo "Diffs for run started at $(date)" > "$diff_log"
+echo "Copy failures for run started at $(date)" > "$copyfail_log"
 
-# Track counters for each directory
-declare -A dir_total dir_same dir_diff dir_copyfail
+# Helper to send notifications
+send_ntfy() {
+  local message="$1"
+  if command -v ntfy >/dev/null 2>&1; then
+    if ! ntfy publish -t "mda5ync" -p tango-tango-8tst "$message" >/dev/null 2>&1; then
+      if command -v curl >/dev/null 2>&1; then
+        if ! curl -sS -X POST -H "Title: mda5ync" -d "$message" "https://ntfy.sh/tango-tango-8tst" >/dev/null 2>&1; then
+          echo "WARNING: ntfy send failed for message: $message" >> "$logfile"
+        fi
+      else
+        echo "WARNING: neither ntfy CLI nor curl available to send ntfy message: $message" >> "$logfile"
+      fi
+    fi
+  else
+    if command -v curl >/dev/null 2>&1; then
+      if ! curl -sS -X POST -H "Title: mda5ync" -d "$message" "https://ntfy.sh/tango-tango-8tst" >/dev/null 2>&1; then
+        echo "WARNING: ntfy send failed for message: $message" >> "$logfile"
+      fi
+    else
+      echo "WARNING: curl not found; cannot send ntfy message: $message" >> "$logfile"
+    fi
+  fi
+}
 
-# Create directory structure first
-echo "Creating directory structure..." | tee -a "$LOG_FILE"
-find "$src" -type d | while IFS= read -r d; do
+# Collect all directories into an array to avoid subshell/pipeline side-effects
+readarray -d '' -t dirs < <(find "$src" -type d -print0)
+
+# Replicate directory tree in destination
+for d in "${dirs[@]}"; do
   rel="${d#$src}"
   rel="${rel#/}"
   mkdir -p "$dst/$rel"
 done
 
-# Build list of directories with files and initialize counters
-echo "Analyzing directory structure..." | tee -a "$LOG_FILE"
-directories_with_files=()
+# Process each directory
+for dir in "${dirs[@]}"; do
+  rel_dir="${dir#$src}"
+  rel_dir="${rel_dir#/}"
+  [ -z "$rel_dir" ] && display_dir="." || display_dir="$rel_dir"
 
-while IFS= read -r d; do
-  rel="${d#$src}"
-  rel="${rel#/}"
-  
-  if [ -z "$rel" ]; then
-    dir_name="root"
-  else
-    dir_name="$rel"
-  fi
-  
-  file_count=$(find "$d" -maxdepth 1 -type f | wc -l)
-  
-  if [ "$file_count" -gt 0 ]; then
-    echo "Starting sync of $file_count files in $dir_name" | tee -a "$LOG_FILE"
-    curl -s -X POST -d "Starting sync of $file_count files in $dir_name" https://ntfy.sh/tango-tango-8tst >/dev/null 2>&1
-    
-    # Store directory for tracking
-    directories_with_files+=("$dir_name")
-    dir_total["$dir_name"]=0
-    dir_same["$dir_name"]=0
-    dir_diff["$dir_name"]=0
-    dir_copyfail["$dir_name"]=0
-  fi
-done < <(find "$src" -type d)
+  # Gather files directly in this directory (non-recursive)
+  readarray -d '' -t files < <(find "$dir" -maxdepth 1 -type f -print0)
+  file_count=${#files[@]}
 
-# Process files - using a temporary file to avoid subshell for main processing
-echo "Processing files..." | tee -a "$LOG_FILE"
-temp_file_list=$(mktemp)
-find "$src" -type f > "$temp_file_list"
+  start_msg="Syncing ${file_count} files in ${display_dir}"
+  echo "$start_msg" >> "$logfile"
+  send_ntfy "$start_msg"
 
-while IFS= read -r f; do
-  # Relative path of the file under SRC
-  rel="${f#$src}"
-  rel="${rel#/}"
+  same_count=0
+  diff_count=0
+  copyfail_count=0
 
-  # Destination file path
-  dest_file="$dst/$rel"
+  for f in "${files[@]}"; do
+    # Relative path of the file under SRC
+    rel="${f#$src}"
+    rel="${rel#/}"
 
-  # Get the directory for tracking
-  dir_path=$(dirname "$rel")
-  if [ "$dir_path" = "." ]; then
-    track_dir="root"
-  else
-    track_dir="$dir_path"
-  fi
-  
-  # Skip if this directory wasn't initialized (shouldn't happen, but defensive)
-  if [ -z "${dir_total[$track_dir]+isset}" ]; then
-    continue
-  fi
+    dest_file="$dst/$rel"
 
-  # Increment total file count for this directory
-  ((dir_total[$track_dir]++))
-
-  if [ -f "$dest_file" ]; then
-    # Both files exist: compare MD5 sums
-    src_hash=$(md5sum "$f" | cut -d' ' -f1)
-    dst_hash=$(md5sum "$dest_file" | cut -d' ' -f1)
-    if [ "$src_hash" = "$dst_hash" ]; then
-      echo "SAME: $rel" >> "$LOG_FILE"
-      ((dir_same[$track_dir]++))
-    else
-      echo "DIFF: $rel" >> "$LOG_FILE"
-      echo "DIFF: $rel" >> "$DIFF_LOG"
-      ((dir_diff[$track_dir]++))
-    fi
-  else
-    # File missing in DEST: copy it
-    mkdir -p "$(dirname "$dest_file")"
-
-    if cp -- "$f" "$dest_file"; then
+    if [ -f "$dest_file" ]; then
       src_hash=$(md5sum "$f" | cut -d' ' -f1)
       dst_hash=$(md5sum "$dest_file" | cut -d' ' -f1)
       if [ "$src_hash" = "$dst_hash" ]; then
-        echo "SAME: $rel" >> "$LOG_FILE"
-        ((dir_same[$track_dir]++))
+        echo "SAME: $rel" >> "$logfile"
+        same_count=$((same_count + 1))
       else
-        echo "DIFF: $rel" >> "$LOG_FILE"
-        echo "DIFF: $rel" >> "$DIFF_LOG"
-        ((dir_diff[$track_dir]++))
+        echo "DIFF: $rel" >> "$logfile"
+        echo "DIFF: $rel" >> "$diff_log"
+        diff_count=$((diff_count + 1))
       fi
     else
-      echo "COPY FAILED: $rel" >> "$LOG_FILE"
-      echo "COPY FAILED: $rel" >> "$COPYFAIL_LOG"
-      ((dir_copyfail[$track_dir]++))
+      mkdir -p "$(dirname "$dest_file")"
+      if cp -- "$f" "$dest_file"; then
+        src_hash=$(md5sum "$f" | cut -d' ' -f1)
+        dst_hash=$(md5sum "$dest_file" | cut -d' ' -f1)
+        if [ "$src_hash" = "$dst_hash" ]; then
+          echo "SAME: $rel" >> "$logfile"
+          same_count=$((same_count + 1))
+        else
+          echo "DIFF: $rel" >> "$logfile"
+          echo "DIFF: $rel" >> "$diff_log"
+          diff_count=$((diff_count + 1))
+        fi
+      else
+        echo "COPY FAILED: $rel" >> "$logfile"
+        echo "COPY FAILED: $rel" >> "$copyfail_log"
+        copyfail_count=$((copyfail_count + 1))
+      fi
     fi
-  fi
-done < "$temp_file_list"
+  done
 
-rm -f "$temp_file_list"
-
-# Write summary for each directory
-echo "" >> "$LOG_FILE"
-echo "=== DIRECTORY SUMMARIES ===" >> "$LOG_FILE"
-
-for dir in "${directories_with_files[@]}"; do
-  total=${dir_total[$dir]}
-  same=${dir_same[$dir]}
-  diff=${dir_diff[$dir]}
-  copyfail=${dir_copyfail[$dir]}
-  
-  echo "" >> "$LOG_FILE"
-  echo "Finished syncing $total files in $dir - $same files were the same, $diff files were different, and $copyfail files failed to copy." >> "$LOG_FILE"
-  
-  curl -s -X POST -d "Finished syncing $total files in $dir - $same files were the same, $diff files were different, and $copyfail files failed to copy" https://ntfy.sh/tango-tango-8tst >/dev/null 2>&1
+  summary_msg="Finished syncing ${file_count} files in ${display_dir} - ${same_count} files were the same, ${diff_count} files were different, and ${copyfail_count} files failed to copy. See ${logfile}"
+  echo "$summary_msg" >> "$logfile"
+  send_ntfy "$summary_msg"
 done
 
-echo "" >> "$LOG_FILE"
-echo "Comparison finished. Results saved to $LOG_FILE (diff: $DIFF_LOG, copyfail: $COPYFAIL_LOG)" | tee -a "$LOG_FILE"
+echo "Sync finished. Results saved to $logfile"
 
-# Open the main log file in nano for review
-nano "$LOG_FILE"
+# Open the main log in nano if available
+if command -v nano >/dev/null 2>&1; then
+  nano "$logfile"
+else
+  echo "Note: nano not found. Main log is at $logfile"
+fi
