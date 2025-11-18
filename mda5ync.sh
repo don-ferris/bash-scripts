@@ -22,8 +22,8 @@
 #
 # This version: if curl or ntfy are missing the script will attempt to install them
 # automatically (without prompting). It uses the available package manager when possible,
-# or falls back to pip for the ntfy client. Root privileges (or sudo) are required
-# for package installations.
+# or falls back to pip for the ntfy client. Root privileges are required for package installations
+# and this script enforces being run as root.
 #
 # Implementation notes:
 # - Uses simple, fast cp for copying.
@@ -33,6 +33,12 @@
 set -o errexit
 set -o nounset
 set -o pipefail
+
+# Ensure the script is run as root (required for package installation actions).
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Error: this script must be run as root." >&2
+  exit 1
+fi
 
 # Helper: detect package manager
 detect_pkg_mgr() {
@@ -55,18 +61,8 @@ detect_pkg_mgr() {
   fi
 }
 
-# Determine whether to use sudo for installs
-SUDO=""
-if [ "$(id -u)" -ne 0 ]; then
-  if command -v sudo >/dev/null 2>&1; then
-    SUDO="sudo"
-  else
-    # We will require sudo or root for package installs; continue if tools already present.
-    SUDO=""
-  fi
-fi
-
 # Install a package with the detected package manager (best-effort, non-interactive).
+# NOTE: No use of sudo here; script requires root.
 install_with_pkgmgr() {
   local pkg="$1"
   local mgr
@@ -79,55 +75,27 @@ install_with_pkgmgr() {
   case "$mgr" in
     apt-get)
       # update first to avoid "no candidate" on some systems
-      if [ -n "$SUDO" ]; then
-        if ! $SUDO apt-get update -y >/dev/null 2>&1; then return 1; fi
-      else
-        if ! apt-get update -y >/dev/null 2>&1; then return 1; fi
-      fi
-      if [ -n "$SUDO" ]; then
-        if ! $SUDO apt-get install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      else
-        if ! apt-get install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      fi
+      if ! apt-get update -y >/dev/null 2>&1; then return 1; fi
+      if ! apt-get install -y "$pkg" >/dev/null 2>&1; then return 1; fi
       ;;
     dnf)
-      if [ -n "$SUDO" ]; then
-        if ! $SUDO dnf install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      else
-        if ! dnf install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      fi
+      if ! dnf install -y "$pkg" >/dev/null 2>&1; then return 1; fi
       ;;
     yum)
-      if [ -n "$SUDO" ]; then
-        if ! $SUDO yum install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      else
-        if ! yum install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      fi
+      if ! yum install -y "$pkg" >/dev/null 2>&1; then return 1; fi
       ;;
     pacman)
-      if [ -n "$SUDO" ]; then
-        if ! $SUDO pacman -Syu --noconfirm "$pkg" >/dev/null 2>&1; then return 1; fi
-      else
-        if ! pacman -Syu --noconfirm "$pkg" >/dev/null 2>&1; then return 1; fi
-      fi
+      if ! pacman -Syu --noconfirm "$pkg" >/dev/null 2>&1; then return 1; fi
       ;;
     apk)
-      if [ -n "$SUDO" ]; then
-        if ! $SUDO apk add --no-cache "$pkg" >/dev/null 2>&1; then return 1; fi
-      else
-        if ! apk add --no-cache "$pkg" >/dev/null 2>&1; then return 1; fi
-      fi
+      if ! apk add --no-cache "$pkg" >/dev/null 2>&1; then return 1; fi
       ;;
     brew)
-      # Homebrew normally runs as non-root; no sudo.
+      # Homebrew normally runs as non-root; attempt install
       if ! brew install "$pkg" >/dev/null 2>&1; then return 1; fi
       ;;
     pkg)
-      if [ -n "$SUDO" ]; then
-        if ! $SUDO pkg install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      else
-        if ! pkg install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      fi
+      if ! pkg install -y "$pkg" >/dev/null 2>&1; then return 1; fi
       ;;
     *)
       return 1
@@ -149,7 +117,6 @@ ensure_command() {
 
   echo "Command '$cmd' not found. Attempting to install it automatically..."
 
-  # Ensure we have a package manager or pip available; otherwise fail.
   if [ "$cmd" = "curl" ]; then
     # Try package manager install for curl
     if install_with_pkgmgr curl; then
@@ -160,44 +127,40 @@ ensure_command() {
       return 1
     fi
   elif [ "$cmd" = "ntfy" ]; then
-    # First try pip3 or pip install --user ntfy
+    # As root, prefer system-wide pip install if pip3 is available
     if command -v pip3 >/dev/null 2>&1; then
-      if pip3 install --user ntfy >/dev/null 2>&1; then
-        # Ensure local user bin is on PATH
-        export PATH="$HOME/.local/bin:$PATH"
+      if pip3 install ntfy >/dev/null 2>&1; then
         if command -v ntfy >/dev/null 2>&1; then
-          echo "Installed ntfy via pip3 (user)."
+          echo "Installed ntfy via pip3."
           return 0
         fi
       fi
-    elif command -v pip >/dev/null 2>&1; then
-      if pip install --user ntfy >/dev/null 2>&1; then
-        export PATH="$HOME/.local/bin:$PATH"
+    fi
+
+    if command -v pip >/dev/null 2>&1; then
+      if pip install ntfy >/dev/null 2>&1; then
         if command -v ntfy >/dev/null 2>&1; then
-          echo "Installed ntfy via pip (user)."
+          echo "Installed ntfy via pip."
           return 0
         fi
       fi
-    else
-      # Try to install pip3 via package manager and then use it
-      # Common package names: python3-pip or python-pip
-      if install_with_pkgmgr python3-pip || install_with_pkgmgr python-pip; then
-        # prefer pip3 if available
-        if command -v pip3 >/dev/null 2>&1; then
-          if pip3 install --user ntfy >/dev/null 2>&1; then
-            export PATH="$HOME/.local/bin:$PATH"
-            if command -v ntfy >/dev/null 2>&1; then
-              echo "Installed ntfy via pip3 (after installing pip)."
-              return 0
-            fi
+    fi
+
+    # Try to install pip3 via package manager and then use it
+    # Common package names: python3-pip or python-pip
+    if install_with_pkgmgr python3-pip || install_with_pkgmgr python-pip; then
+      if command -v pip3 >/dev/null 2>&1; then
+        if pip3 install ntfy >/dev/null 2>&1; then
+          if command -v ntfy >/dev/null 2>&1; then
+            echo "Installed ntfy via pip3 (after installing pip)."
+            return 0
           fi
-        elif command -v pip >/dev/null 2>&1; then
-          if pip install --user ntfy >/dev/null 2>&1; then
-            export PATH="$HOME/.local/bin:$PATH"
-            if command -v ntfy >/dev/null 2>&1; then
-              echo "Installed ntfy via pip (after installing pip)."
-              return 0
-            fi
+        fi
+      elif command -v pip >/dev/null 2>&1; then
+        if pip install ntfy >/dev/null 2>&1; then
+          if command -v ntfy >/dev/null 2>&1; then
+            echo "Installed ntfy via pip (after installing pip)."
+            return 0
           fi
         fi
       fi
@@ -213,31 +176,15 @@ ensure_command() {
 
     # On some systems ntfy may be available via snap
     if command -v snap >/dev/null 2>&1; then
-      if [ -n "$SUDO" ]; then
-        if $SUDO snap install ntfy >/dev/null 2>&1; then
-          if command -v ntfy >/dev/null 2>&1; then
-            echo "Installed ntfy via snap."
-            return 0
-          fi
-        fi
-      else
-        if snap install ntfy >/dev/null 2>&1; then
-          if command -v ntfy >/dev/null 2>&1; then
-            echo "Installed ntfy via snap."
-            return 0
-          fi
+      if snap install ntfy >/dev/null 2>&1; then
+        if command -v ntfy >/dev/null 2>&1; then
+          echo "Installed ntfy via snap."
+          return 0
         fi
       fi
     fi
 
-    # If the binary exists in typical pip user location, add that to PATH and accept it
-    if [ -x "$HOME/.local/bin/ntfy" ]; then
-      export PATH="$HOME/.local/bin:$PATH"
-      echo "Found ntfy at $HOME/.local/bin/ntfy and added to PATH."
-      return 0
-    fi
-
-    echo "Failed to install ntfy automatically. Please install ntfy (pip install --user ntfy) or via your package manager." >&2
+    echo "Failed to install ntfy automatically. Please install ntfy (pip install ntfy) or via your package manager." >&2
     return 1
   else
     echo "No automatic install procedure for '$cmd' implemented." >&2
@@ -260,7 +207,7 @@ if ! command -v ntfy >/dev/null 2>&1; then
   fi
 fi
 
-# If pip installed ntfy into ~/.local/bin, ensure PATH includes it for the rest of the script.
+# If pip installed ntfy into ~/.local/bin for root, ensure PATH includes it for the rest of the script.
 export PATH="$HOME/.local/bin:$PATH"
 
 # If two parameters passed, use them; otherwise prompt for both.
@@ -414,7 +361,7 @@ find "$src" -type d -print0 | while IFS= read -r -d '' dir; do
   done < <(find "$dir" -maxdepth 1 -type f -print0)
 
   # Directory summary message
-  summary_msg="Finished syncing ${file_count} files in ${display_dir} - ${same_count} files were the same, ${diff_count} files were different, and ${copyfail_count} files failed to copy. See ${logfile}"
+  summary_msg="Finished syncing ${file_count} files in ${display_dir} - ${same_count} files were the same, ${diff_count} files were different, and ${copyfail_count} files failed to copy. See ${logfile} for details."
   echo "$summary_msg" >> "$logfile"
   send_ntfy "$summary_msg"
 
