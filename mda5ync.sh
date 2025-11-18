@@ -60,7 +60,7 @@ done
 
 # Log file in current directory
 logfile="mda5ync.log"
-echo "Comparison started at $(date)" > "$logfile"
+echo "mda5ync (md5 MediaSync) started at $(date)" > "$logfile"
 
 # Walk through files in SRC and compare to DEST. If missing, copy then recompare.
 find "$src" -type f -print0 | while IFS= read -r -d '' f; do
