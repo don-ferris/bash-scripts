@@ -8,13 +8,8 @@
 # - prints "Processing $SRC_FILE" for every source file on stdout
 # - uses curl only for ntfy (no checks/installation code for curl)
 # - no package-manager/install code at all
-#
-# Behavior:
-# - copies missing files, then compares md5 and logs SAME/DIFF
-# - creates three logs with timestamped names (main, diffs, copy-fails)
-# - sends ntfy notifications (topic: tango-tango-8tst) via curl for start/finish of each directory
-# - opens main log in nano at the end if available
-
+# - do not log or notify for directories with fewer than 2 files
+# - add a blank line before and after START_MSG and SUMMARY_MSG in the log
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -93,8 +88,13 @@ for DIR in "${DIRS[@]}"; do
   FILE_COUNT=${#FILES[@]}
 
   START_MSG="Syncing ${FILE_COUNT} files in ${DISPLAY_DIR}"
-  echo "$START_MSG" >> "$LOGFILE"
-  send_ntfy "$START_MSG"
+  # Only write START_MSG to the log and send notification if directory has 2 or more files
+  if [ "$FILE_COUNT" -ge 2 ]; then
+    echo "" >> "$LOGFILE"
+    echo "$START_MSG" >> "$LOGFILE"
+    echo "" >> "$LOGFILE"
+    send_ntfy "$START_MSG"
+  fi
 
   SAME_COUNT=0
   DIFF_COUNT=0
@@ -143,8 +143,13 @@ for DIR in "${DIRS[@]}"; do
   done
 
   SUMMARY_MSG="Finished syncing ${FILE_COUNT} files in ${DISPLAY_DIR} - ${SAME_COUNT} files were the same, ${DIFF_COUNT} files were different, and ${COPYFAIL_COUNT} files failed to copy. See ${LOGFILE}"
-  echo "$SUMMARY_MSG" >> "$LOGFILE"
-  send_ntfy "$SUMMARY_MSG"
+  # Only write SUMMARY_MSG to the log and send notification if directory has 2 or more files
+  if [ "$FILE_COUNT" -ge 2 ]; then
+    echo "" >> "$LOGFILE"
+    echo "$SUMMARY_MSG" >> "$LOGFILE"
+    echo "" >> "$LOGFILE"
+    send_ntfy "$SUMMARY_MSG"
+  fi
 done
 
 echo "Sync finished. Results saved to $LOGFILE"
