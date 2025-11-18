@@ -21,9 +21,8 @@
 # 5) When all is finished, open the main log in nano.
 #
 # This version: if curl or ntfy are missing the script will attempt to install them
-# automatically (without prompting). It uses the available package manager when possible,
-# or falls back to pip for the ntfy client. Root privileges are required for package installations
-# and this script enforces being run as root.
+# automatically (without prompting). It uses apt-get only (Ubuntu/Debian specific).
+# Root privileges are required for package installations and this script enforces being run as root.
 #
 # Implementation notes:
 # - Uses simple, fast cp for copying.
@@ -40,74 +39,17 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-# Helper: detect package manager
-detect_pkg_mgr() {
-  if command -v apt-get >/dev/null 2>&1; then
-    echo "apt-get"
-  elif command -v dnf >/dev/null 2>&1; then
-    echo "dnf"
-  elif command -v yum >/dev/null 2>&1; then
-    echo "yum"
-  elif command -v pacman >/dev/null 2>&1; then
-    echo "pacman"
-  elif command -v apk >/dev/null 2>&1; then
-    echo "apk"
-  elif command -v brew >/dev/null 2>&1; then
-    echo "brew"
-  elif command -v pkg >/dev/null 2>&1; then
-    echo "pkg"
-  else
-    echo ""
-  fi
-}
-
-# Install a package with the detected package manager (best-effort, non-interactive).
-# NOTE: No use of sudo here; script requires root.
-install_with_pkgmgr() {
+# Install using apt-get (Ubuntu/Debian only)
+apt_install() {
   local pkg="$1"
-  local mgr
-  mgr=$(detect_pkg_mgr)
-
-  if [ -z "$mgr" ]; then
-    return 1
-  fi
-
-  case "$mgr" in
-    apt-get)
-      # update first to avoid "no candidate" on some systems
-      if ! apt-get update -y >/dev/null 2>&1; then return 1; fi
-      if ! apt-get install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      ;;
-    dnf)
-      if ! dnf install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      ;;
-    yum)
-      if ! yum install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      ;;
-    pacman)
-      if ! pacman -Syu --noconfirm "$pkg" >/dev/null 2>&1; then return 1; fi
-      ;;
-    apk)
-      if ! apk add --no-cache "$pkg" >/dev/null 2>&1; then return 1; fi
-      ;;
-    brew)
-      # Homebrew normally runs as non-root; attempt install
-      if ! brew install "$pkg" >/dev/null 2>&1; then return 1; fi
-      ;;
-    pkg)
-      if ! pkg install -y "$pkg" >/dev/null 2>&1; then return 1; fi
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-
+  # Keep apt quiet and non-interactive where possible
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq >/dev/null 2>&1 || return 1
+  apt-get install -y -qq "$pkg" >/dev/null 2>&1 || return 1
   return 0
 }
 
-# Ensure a command exists, otherwise try to install it automatically (non-interactive).
-# For 'curl' we install the package 'curl'. For 'ntfy' we prefer pip (pip3) but fall back
-# to a package manager install of 'ntfy' if available.
+# Ensure a command exists, otherwise try to install it automatically via apt-get (or pip3 for ntfy).
 ensure_command() {
   local cmd="$1"
 
@@ -115,19 +57,18 @@ ensure_command() {
     return 0
   fi
 
-  echo "Command '$cmd' not found. Attempting to install it automatically..."
+  echo "Command '$cmd' not found. Attempting to install it automatically using apt-get..."
 
   if [ "$cmd" = "curl" ]; then
-    # Try package manager install for curl
-    if install_with_pkgmgr curl; then
-      echo "Installed curl via package manager."
+    if apt_install curl; then
+      echo "Installed curl via apt-get."
       return 0
     else
-      echo "Failed to install curl via package manager. Please install curl manually." >&2
+      echo "Failed to install curl via apt-get. Please install curl manually." >&2
       return 1
     fi
   elif [ "$cmd" = "ntfy" ]; then
-    # As root, prefer system-wide pip install if pip3 is available
+    # Prefer pip3 global install if available
     if command -v pip3 >/dev/null 2>&1; then
       if pip3 install ntfy >/dev/null 2>&1; then
         if command -v ntfy >/dev/null 2>&1; then
@@ -137,6 +78,7 @@ ensure_command() {
       fi
     fi
 
+    # Try pip (python2) as a fallback
     if command -v pip >/dev/null 2>&1; then
       if pip install ntfy >/dev/null 2>&1; then
         if command -v ntfy >/dev/null 2>&1; then
@@ -146,45 +88,27 @@ ensure_command() {
       fi
     fi
 
-    # Try to install pip3 via package manager and then use it
-    # Common package names: python3-pip or python-pip
-    if install_with_pkgmgr python3-pip || install_with_pkgmgr python-pip; then
+    # Install pip3 via apt-get and retry
+    if apt_install python3-pip; then
       if command -v pip3 >/dev/null 2>&1; then
         if pip3 install ntfy >/dev/null 2>&1; then
           if command -v ntfy >/dev/null 2>&1; then
-            echo "Installed ntfy via pip3 (after installing pip)."
-            return 0
-          fi
-        fi
-      elif command -v pip >/dev/null 2>&1; then
-        if pip install ntfy >/dev/null 2>&1; then
-          if command -v ntfy >/dev/null 2>&1; then
-            echo "Installed ntfy via pip (after installing pip)."
+            echo "Installed ntfy via pip3 (after installing python3-pip)."
             return 0
           fi
         fi
       fi
     fi
 
-    # If pip-based install didn't work, try package manager for ntfy (best-effort)
-    if install_with_pkgmgr ntfy; then
+    # Try to install ntfy from apt repos directly (best-effort)
+    if apt_install ntfy; then
       if command -v ntfy >/dev/null 2>&1; then
-        echo "Installed ntfy via package manager."
+        echo "Installed ntfy via apt-get."
         return 0
       fi
     fi
 
-    # On some systems ntfy may be available via snap
-    if command -v snap >/dev/null 2>&1; then
-      if snap install ntfy >/dev/null 2>&1; then
-        if command -v ntfy >/dev/null 2>&1; then
-          echo "Installed ntfy via snap."
-          return 0
-        fi
-      fi
-    fi
-
-    echo "Failed to install ntfy automatically. Please install ntfy (pip install ntfy) or via your package manager." >&2
+    echo "Failed to install ntfy automatically. Please install ntfy (pip3 install ntfy) or via apt-get." >&2
     return 1
   else
     echo "No automatic install procedure for '$cmd' implemented." >&2
@@ -361,7 +285,7 @@ find "$src" -type d -print0 | while IFS= read -r -d '' dir; do
   done < <(find "$dir" -maxdepth 1 -type f -print0)
 
   # Directory summary message
-  summary_msg="Finished syncing ${file_count} files in ${display_dir} - ${same_count} files were the same, ${diff_count} files were different, and ${copyfail_count} files failed to copy. See ${logfile} for details."
+  summary_msg="Finished syncing ${file_count} files in ${display_dir} - ${same_count} files were the same, ${diff_count} files were different, and ${copyfail_count} files failed to copy. See ${logfile}"
   echo "$summary_msg" >> "$logfile"
   send_ntfy "$summary_msg"
 
