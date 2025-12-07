@@ -16,6 +16,11 @@ alias ..='cd .. && ls'
 alias ...='cd ../.. && ls'
 
 
+#	+x (PLUS X) - chmod +x
+#_________________________________________________________________
+alias +x='chmod +x'
+
+
 #	HOME - shortcut to home directory (this may already be
 #	in place but if so, no harm done
 #_________________________________________________________________
