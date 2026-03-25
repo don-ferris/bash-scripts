@@ -1,0 +1,24 @@
+#!/bin/bash
+if [ "$EUID" -ne 0 ]; then
+  echo "Error: Please run as root"
+  exit 1
+fi
+
+# 1. LIVE HARDWARE TWEAKS (Bypassing GRUB)
+# Disable Intel Panel Self Refresh (common 620 hang cause)
+echo 0 > /sys/module/i915/parameters/enable_psr 2>/dev/null
+
+# 2. SWAP RESET (The only thing that worked consistently)
+swapoff /dev/sda2
+mkswap -U 787bf88d-b78c-405a-9293-5e8afbea4d50 /dev/sda2
+swapon /dev/sda2
+
+# 3. FORCE SHUTDOWN MODE
+echo shutdown > /sys/power/disk
+
+# 4. FINAL PREP
+sync
+echo 3 > /proc/sys/vm/drop_caches
+
+# 5. TRIGGER
+echo disk > /sys/power/state
